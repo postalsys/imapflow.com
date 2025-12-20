@@ -65,9 +65,9 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     algolia: {
-      appId: 'BH4D9OD16A',
-      apiKey: '082c6635b32d44ed095369a5f1c790fd',
-      indexName: 'imapflow',
+      appId: 'P0H02EB2AJ',
+      apiKey: 'f482204f0e3ef705441e4382bb225275',
+      indexName: 'ImapFlow Documentation',
       contextualSearch: true,
     },
     navbar: {
