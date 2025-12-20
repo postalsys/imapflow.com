@@ -68,7 +68,15 @@ const config: Config = {
       appId: 'P0H02EB2AJ',
       apiKey: 'f482204f0e3ef705441e4382bb225275',
       indexName: 'ImapFlow Documentation',
+
+      // Optional: see doc section below
       contextualSearch: true,
+
+      // Optional: path for search page that enabled by default (`false` to disable it)
+      searchPagePath: "search",
+
+      // Optional: whether the insights feature is enabled or not on Docsearch (`false` by default)
+      insights: true,
     },
     navbar: {
       title: 'ImapFlow',
