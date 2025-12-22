@@ -33,6 +33,15 @@ const config: Config = {
 
   onBrokenLinks: 'throw',
 
+  // Plausible analytics
+  scripts: [
+    {
+      src: 'https://plausible.emailengine.dev/js/script.js',
+      defer: true,
+      'data-domain': 'imapflow.com',
+    },
+  ],
+
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
   // may want to replace "en" with "zh-Hans".
