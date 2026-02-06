@@ -130,7 +130,7 @@ await client.noop();
 
 Enters IDLE mode to wait for server notifications. Automatically called when `disableAutoIdle` is false.
 
-**Returns:** Promise&lt;void&gt;
+**Returns:** Promise&lt;boolean&gt;
 
 **Example:**
 
@@ -803,7 +803,7 @@ Appends a message to a mailbox.
 - `flags` (Array) - Optional flags
 - `idate` (Date) - Optional internal date
 
-**Returns:** Promise&lt;AppendResponseObject&gt;
+**Returns:** Promise&lt;AppendResponseObject | false&gt;
 
 - `path` (String) - Mailbox path
 - `uid` (Number) - UID of appended message (if UIDPLUS extension)
@@ -911,6 +911,19 @@ client.on('flags', (data) => {
 });
 ```
 
+### Event: 'response'
+
+Emitted when a tagged response is received from the server.
+
+```js
+client.on('response', (response) => {
+    console.log('Response:', response.response);
+    if (response.code) {
+        console.log('Code:', response.code);
+    }
+});
+```
+
 ### Event: 'log'
 
 Emitted when `emitLogs: true`. Contains log entries.
@@ -947,7 +960,13 @@ try {
 
 ### authenticated
 
-Whether the client is authenticated.
+The authenticated username, or `false` if not authenticated.
+
+**Type:** string | boolean
+
+### secureConnection
+
+Whether the connection is currently encrypted.
 
 **Type:** Boolean
 
@@ -961,7 +980,7 @@ Whether the connection is usable (connected and authenticated).
 
 Set of server capabilities.
 
-**Type:** Set&lt;String&gt;
+**Type:** Map&lt;string, boolean | number&gt;
 
 ### enabled
 
