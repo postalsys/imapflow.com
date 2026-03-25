@@ -4,6 +4,10 @@ sidebar_position: 1
 
 # ImapFlow Client API
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/cleaning.png" alt="ImapFlow API reference" width="200" />
+</div>
+
 Complete API reference for the ImapFlow client class.
 
 ## Constructor

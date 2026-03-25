@@ -4,6 +4,10 @@ sidebar_position: 1
 
 # Installation
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/connecting.png" alt="Connecting to IMAP server" width="200" />
+</div>
+
 ## Requirements
 
 - Node.js version 14.0 or higher

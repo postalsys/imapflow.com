@@ -4,6 +4,10 @@ sidebar_position: 2
 
 # Configuration
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/storing.png" alt="Configuring ImapFlow" width="200" />
+</div>
+
 This guide covers all configuration options available when creating an ImapFlow client.
 
 ## Basic Configuration

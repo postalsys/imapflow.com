@@ -91,7 +91,7 @@ const config: Config = {
       title: 'ImapFlow',
       logo: {
         alt: 'ImapFlow Logo',
-        src: 'img/logo.svg',
+        src: 'img/waving.png',
       },
       items: [
         {

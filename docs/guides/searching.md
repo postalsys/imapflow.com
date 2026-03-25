@@ -4,6 +4,10 @@ sidebar_position: 4
 
 # Searching Messages
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/searching.png" alt="Searching messages" width="200" />
+</div>
+
 This guide covers how to search for messages using ImapFlow's powerful search capabilities.
 
 ## Basic Search

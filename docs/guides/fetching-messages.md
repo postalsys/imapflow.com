@@ -4,6 +4,10 @@ sidebar_position: 3
 
 # Fetching Messages
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/syncing.png" alt="Fetching messages" width="200" />
+</div>
+
 This guide covers the various ways to fetch and retrieve messages using ImapFlow.
 
 ## Fetch Methods

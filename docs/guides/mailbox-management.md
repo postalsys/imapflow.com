@@ -4,6 +4,10 @@ sidebar_position: 5
 
 # Mailbox Management
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/sorting.png" alt="Managing mailboxes" width="200" />
+</div>
+
 This guide covers how to work with mailboxes (folders) in ImapFlow.
 
 ## Listing Mailboxes

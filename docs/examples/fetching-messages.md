@@ -4,6 +4,10 @@ sidebar_position: 1
 
 # Fetching Messages Examples
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/receiving.png" alt="Fetching messages examples" width="200" />
+</div>
+
 Practical examples for fetching and working with email messages.
 
 :::danger Important: Fetch Loop Restrictions

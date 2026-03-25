@@ -5,6 +5,10 @@ slug: /
 
 # ImapFlow
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/waving.png" alt="ImapFlow mascot" width="200" />
+</div>
+
 ImapFlow is a modern and easy-to-use IMAP client library for Node.js. The focus for ImapFlow is to provide an easy-to-use API over IMAP without requiring in-depth knowledge of the IMAP protocol.
 
 ```bash title="Install with npm"

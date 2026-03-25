@@ -4,6 +4,10 @@ sidebar_position: 1
 
 # Basic Usage
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/thinking.png" alt="Understanding ImapFlow basics" width="200" />
+</div>
+
 This guide covers the fundamental concepts and patterns for using ImapFlow.
 
 ## The ImapFlow Client

@@ -4,6 +4,10 @@ sidebar_position: 2
 
 # Quick Start
 
+<div style={{textAlign: 'center'}}>
+  <img src="/img/pushing.png" alt="Getting started with ImapFlow" width="200" />
+</div>
+
 This guide will help you get started with ImapFlow in just a few minutes.
 
 ## Basic Connection
