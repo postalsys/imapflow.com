@@ -395,14 +395,20 @@ let { meta, content } = await client.download('*', '2', {
 ```js
 let message = await client.fetchOne('*', { bodyStructure: true });
 
-function findAttachments(node, path = []) {
+// Note: ImapFlow stores Content-Type as a single string like "text/plain"
+// or "multipart/mixed" in node.type — there is no separate `subtype` field.
+function findAttachments(node) {
     let attachments = [];
+    let topType = (node.type || '').split('/')[0];
 
-    if (node.disposition === 'attachment' ||
-        (node.type && node.type !== 'text' && node.type !== 'multipart' && !node.disposition)) {
+    let isAttachment =
+        node.disposition === 'attachment' ||
+        (node.type && topType !== 'text' && topType !== 'multipart' && !node.disposition);
+
+    if (isAttachment) {
         attachments.push({
-            part: path.length ? path.join('.') : '1',
-            type: `${node.type}/${node.subtype || 'octet-stream'}`,
+            part: node.part || '1',
+            type: node.type,
             encoding: node.encoding,
             size: node.size,
             filename: node.dispositionParameters?.filename ||
@@ -412,9 +418,9 @@ function findAttachments(node, path = []) {
     }
 
     if (node.childNodes) {
-        node.childNodes.forEach((child, i) => {
-            attachments.push(...findAttachments(child, [...path, i + 1]));
-        });
+        for (let child of node.childNodes) {
+            attachments.push(...findAttachments(child));
+        }
     }
 
     return attachments;

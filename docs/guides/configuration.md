@@ -215,11 +215,13 @@ ImapFlow supports both SOCKS and HTTP CONNECT proxies.
 
 ### logger
 
-By default, ImapFlow logs to console using [Pino](https://getpino.io/) format. You can provide a custom logger or disable logging.
+By default, ImapFlow logs through a built-in [Pino](https://getpino.io/) instance. You can provide a custom logger object, or disable logging by setting `logger: false`.
+
+:::warning
+Do not pass `console` as a logger. ImapFlow expects a logger object that exposes `trace`, `debug`, `info`, `warn`, `error`, and `fatal` methods (the same shape as a Pino logger).
+:::
 
 ### Custom Logger
-
-Use a custom logger instance. The logger must have `debug`, `info`, `warn`, and `error` methods:
 
 ```js
 const pino = require('pino');
@@ -235,7 +237,7 @@ const pino = require('pino');
 
 ```js
 {
-    logger: false  // No logging (default)
+    logger: false  // No logging
 }
 ```
 
@@ -497,8 +499,8 @@ const client = new ImapFlow({
 
 ```js title="Development configuration"
 {
-    // Logging is enabled by default (Pino format)
-    logRaw: true,  // Log raw IMAP data for debugging
+    // Logging uses the built-in Pino instance by default
+    logRaw: true,  // Log raw IMAP data (base64 encoded) for debugging
     tls: {
         rejectUnauthorized: false  // Only for testing!
     }

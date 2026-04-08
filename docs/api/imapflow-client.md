@@ -19,9 +19,10 @@ Creates a new IMAP client instance.
 **Parameters:**
 
 - `options` (Object) - Configuration options
-  - `host` (String) - IMAP server hostname (required)
-  - `port` (Number) - Port number (default: 993 for secure, 110 for plain - note: standard IMAP plain port is 143)
-  - `secure` (Boolean) - Use TLS connection (default: false)
+  - `host` (String) - IMAP server hostname (required, defaults to `localhost`)
+  - `port` (Number) - Port number (defaults to 993 if `secure: true`, otherwise 110)
+  - `secure` (Boolean) - If `true`, establishes the connection directly over TLS. If `false` (default), uses plain TCP and may upgrade via STARTTLS unless `doSTARTTLS: false` is set. Setting `port: 993` without `secure` implies `secure: true`.
+  - `doSTARTTLS` (Boolean) - Force STARTTLS behavior. `true` requires STARTTLS upgrade (fails if not supported), `false` disables STARTTLS entirely. Cannot be combined with `secure: true`.
   - `servername` (String) - Servername for SNI (for IP addresses or custom names)
   - `auth` (Object) - Authentication credentials
     - `user` (String) - Username
@@ -107,7 +108,7 @@ client.close();
 
 ### closeAfter()
 
-Closes the TCP connection immediately without blocking. Uses `setImmediate()` to schedule socket destruction, which allows any pending operations to complete first.
+Schedules `close()` to run via `setImmediate()`, returning immediately so the caller can complete its current synchronous flow before the socket is torn down. Useful inside error handlers where calling `close()` directly would interfere with the rest of the function.
 
 **Returns:** void
 
@@ -117,6 +118,29 @@ Closes the TCP connection immediately without blocking. Uses `setImmediate()` to
 // Non-blocking close
 client.closeAfter();
 ```
+
+### stats(reset)
+
+Returns byte counters for the current connection.
+
+**Parameters:**
+
+- `reset` (Boolean) - If `true`, the counters are reset to zero after reading.
+
+**Returns:** `{ sent: number, received: number }`
+
+**Example:**
+
+```js
+let { sent, received } = client.stats();
+console.log(`Sent ${sent} bytes, received ${received} bytes`);
+```
+
+### unbind()
+
+Detaches the underlying sockets from the IMAP pipeline and returns the read and write sockets. After calling this, ImapFlow no longer interacts with the connection.
+
+**Returns:** `{ readSocket, writeSocket }`
 
 ### noop()
 
@@ -197,7 +221,8 @@ Opens a mailbox directly without locking. Use `getMailboxLock()` for safer opera
 
 - `path` (String|Array) - Mailbox path
 - `options` (Object) - Optional settings
-  - `readOnly` (Boolean) - Open in read-only mode
+  - `readOnly` (Boolean) - Open in read-only mode (uses IMAP `EXAMINE` instead of `SELECT`)
+  - `description` (String) - Optional description used in lock-tracking trace logs
 
 **Returns:** Promise&lt;MailboxObject&gt;
 
@@ -351,7 +376,7 @@ Gets mailbox status without selecting it.
 
 **Parameters:**
 
-- `path` (String|Array) - Mailbox path
+- `path` (String) - Mailbox path
 - `query` (Object) - Status items to fetch
   - `messages` (Boolean) - Total message count
   - `recent` (Boolean) - Recent message count
@@ -375,13 +400,13 @@ console.log(`${status.unseen}/${status.messages} unseen`);
 
 ### getQuota(path)
 
-Gets quota information for a mailbox.
+Gets quota information for a mailbox. Defaults to `INBOX` if no path is provided.
 
 **Parameters:**
 
-- `path` (String|Array) - Mailbox path
+- `path` (String) - Optional mailbox path (defaults to `'INBOX'`)
 
-**Returns:** Promise&lt;QuotaResponse|Boolean&gt;
+**Returns:** Promise&lt;QuotaResponse|false&gt; - `false` if the server does not support the QUOTA extension or the path does not exist
 
 **Example:**
 
@@ -586,8 +611,9 @@ Searches for messages in the currently selected mailbox.
   - `gmailraw` (String) - Alias for gmraw
 - `options` (Object) - Search options
   - `uid` (Boolean) - Return UIDs instead of sequence numbers
+  - `returnOptions` (Array) - Request ESEARCH ([RFC 4731](https://www.rfc-editor.org/rfc/rfc4731.html)) result. Each entry is one of `'MIN'`, `'MAX'`, `'COUNT'`, `'ALL'`, or `{ partial: '1:100' }` ([RFC 9394](https://www.rfc-editor.org/rfc/rfc9394.html)). When provided, returns an `ESearchResult` instead of a plain array (the client falls back to deriving `min`/`max`/`count`/`all` if the server lacks ESEARCH).
 
-**Returns:** Promise&lt;Array&lt;Number&gt;&gt;
+**Returns:** Promise&lt;Number[] | ESearchResult | false&gt;
 
 **Example:**
 
@@ -609,6 +635,13 @@ let uids = await client.search({
 let uids = await client.search({
     gmraw: 'has:attachment larger:5M'
 }, { uid: true });
+
+// ESEARCH: get only the count and highest matching UID
+let result = await client.search({ seen: false }, {
+    uid: true,
+    returnOptions: ['COUNT', 'MAX']
+});
+console.log(result.count, result.max);
 ```
 
 ## Message Manipulation Methods
@@ -681,10 +714,12 @@ Adds flags to messages.
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range or search
-- `flags` (Array|Set) - Flags to add (e.g., ['\\Seen', '\\Flagged', 'custom'])
+- `flags` (String[]) - Flags to add (e.g., `['\\Seen', '\\Flagged', 'custom']`)
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq not changed since
+  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `useLabels` (Boolean) - If `true`, modify Gmail labels instead of flags (requires `X-GM-EXT-1`)
+  - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
 **Returns:** Promise&lt;Boolean&gt;
 
@@ -701,10 +736,12 @@ Removes flags from messages.
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range or search
-- `flags` (Array|Set) - Flags to remove
+- `flags` (String[]) - Flags to remove
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq not changed since
+  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `useLabels` (Boolean) - If `true`, remove Gmail labels instead of flags
+  - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
 **Returns:** Promise&lt;Boolean&gt;
 
@@ -721,10 +758,12 @@ Sets exact flags for messages, replacing existing flags.
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range or search
-- `flags` (Array|Set) - Flags to set
+- `flags` (String[]) - Flags to set
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq not changed since
+  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `useLabels` (Boolean) - If `true`, replace Gmail labels instead of flags
+  - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
 **Returns:** Promise&lt;Boolean&gt;
 
@@ -741,9 +780,10 @@ Sets the flag color for messages using special color flags.
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range
-- `color` (String) - Color name: 'red', 'orange', 'yellow', 'green', 'blue', 'purple', or falsy to remove
+- `color` (String) - Color name: `'red'`, `'orange'`, `'yellow'`, `'green'`, `'blue'`, `'purple'`, `'grey'`, or a falsy value to remove the color
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
+  - `unchangedSince` (BigInt) - Only update if modseq has not changed since this value (CONDSTORE)
 
 **Returns:** Promise&lt;Boolean&gt;
 
@@ -753,46 +793,22 @@ Sets the flag color for messages using special color flags.
 await client.setFlagColor('12345', 'red', { uid: true });
 ```
 
-## Gmail Label Methods
+## Gmail Labels
 
-These methods only work with Gmail servers.
+Gmail labels are managed via the regular flag methods (`messageFlagsAdd`, `messageFlagsRemove`, `messageFlagsSet`) by passing `useLabels: true` in the options. There are no dedicated label methods. This requires the server to support the `X-GM-EXT-1` extension.
 
-### messageLabelsAdd(range, labels, options)
+**Example:**
 
-Adds Gmail labels to messages.
+```js
+// Add a Gmail label
+await client.messageFlagsAdd('12345', ['MyLabel'], { uid: true, useLabels: true });
 
-**Parameters:**
+// Remove a Gmail label
+await client.messageFlagsRemove('12345', ['OldLabel'], { uid: true, useLabels: true });
 
-- `range` (String|Array) - Message range
-- `labels` (Array) - Labels to add
-- `options` (Object) - Options
-  - `uid` (Boolean) - Range contains UIDs
-
-**Returns:** Promise&lt;Boolean&gt;
-
-### messageLabelsRemove(range, labels, options)
-
-Removes Gmail labels from messages.
-
-**Parameters:**
-
-- `range` (String|Array) - Message range
-- `labels` (Array) - Labels to remove
-- `options` (Object) - Options
-
-**Returns:** Promise&lt;Boolean&gt;
-
-### messageLabelsSet(range, labels, options)
-
-Sets exact Gmail labels for messages.
-
-**Parameters:**
-
-- `range` (String|Array) - Message range
-- `labels` (Array) - Labels to set
-- `options` (Object) - Options
-
-**Returns:** Promise&lt;Boolean&gt;
+// Replace all labels for a message
+await client.messageFlagsSet('12345', ['Inbox', 'Important'], { uid: true, useLabels: true });
+```
 
 ## Append Methods
 
@@ -982,15 +998,27 @@ Whether the connection is usable (connected and authenticated).
 
 ### capabilities
 
-Set of server capabilities.
+Map of server capabilities reported by the server. Keys are capability names, values are typically `true` or, for capabilities like `APPENDLIMIT`, a numeric value.
 
 **Type:** Map&lt;string, boolean | number&gt;
 
 ### enabled
 
-Set of enabled IMAP extensions.
+Set of IMAP extensions that have been activated for this connection (via the `ENABLE` command).
 
-**Type:** Set&lt;String&gt;
+**Type:** Set&lt;string&gt;
+
+### host
+
+Hostname the client is connecting to.
+
+**Type:** String
+
+### port
+
+Port number the client is connecting to.
+
+**Type:** Number
 
 ### serverInfo
 

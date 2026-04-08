@@ -88,12 +88,14 @@ console.log('Created:', result.path);
 
 ### Create Nested Mailboxes
 
-The path delimiter is handled automatically:
+You can pass an array of path segments and ImapFlow joins them using the server's delimiter and applies any required namespace prefix:
 
 ```js
-// Creates parent folders if needed
-await client.mailboxCreate('Work/Projects/ImapFlow');
+// Joined with the server's delimiter (e.g. "INBOX.Work.Projects.ImapFlow")
+await client.mailboxCreate(['Work', 'Projects', 'ImapFlow']);
 ```
+
+Whether intermediate parent folders are created automatically is server-specific — if your server requires explicit parents, create them in order before the leaf.
 
 ## Renaming Mailboxes
 
@@ -148,17 +150,20 @@ When a mailbox is selected, `client.mailbox` contains:
 ```js
 {
     path: 'INBOX',
-    exists: 42,              // Number of messages
-    recent: 0,               // Number of recent messages
-    unseen: 5,               // Number of unseen messages
+    delimiter: '/',          // Path delimiter
+    exists: 42,              // Total number of messages
     uidNext: 1000,           // Next UID that will be assigned
-    uidValidity: 123456789n, // Mailbox UID validity
+    uidValidity: 123456789n, // Mailbox UID validity (BigInt)
     flags: Set,              // Available flags
     permanentFlags: Set,     // Flags that can be permanently stored
-    highestModseq: 98765n,   // Highest modification sequence
-    delimiter: '/'           // Path delimiter
+    highestModseq: 98765n,   // Highest modification sequence (if CONDSTORE)
+    mailboxId: 'abcd-1234',  // Unique mailbox ID (if OBJECTID extension)
+    specialUse: '\\Inbox',   // Special-use flag, if applicable
+    readOnly: false          // True if opened in read-only mode
 }
 ```
+
+`recent` and `unseen` counts are not part of `client.mailbox`. To obtain them, call `client.status(path, { recent: true, unseen: true })`.
 
 ### Read-Only Access
 
@@ -238,15 +243,19 @@ try {
 
 ## Mailbox Quota
 
-Check mailbox quota (if supported by server):
+Check mailbox quota. `getQuota()` returns `false` if the server does not support the QUOTA extension or the path does not exist:
 
 ```js
-try {
-    let quota = await client.getQuota();
-    console.log('Used:', quota.storage.used);
-    console.log('Limit:', quota.storage.limit);
-} catch (err) {
+let quota = await client.getQuota();      // defaults to INBOX
+if (!quota) {
     console.log('Quota not supported');
+} else {
+    if (quota.storage) {
+        console.log('Storage:', quota.storage.used, '/', quota.storage.limit);
+    }
+    if (quota.messages) {
+        console.log('Messages:', quota.messages.used, '/', quota.messages.limit);
+    }
 }
 ```
 

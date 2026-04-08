@@ -25,7 +25,7 @@ const client = new ImapFlow({
         user: 'user@example.com',
         pass: 'your-password'
     },
-    logger: false  // Set to console to see debug output
+    logger: false  // Disable logging. Omit to use the default Pino logger.
 });
 ```
 

@@ -169,14 +169,20 @@ async function fetchMessagesWithAttachments() {
     await client.logout();
 }
 
-function findAttachments(node, path = []) {
+// Note: ImapFlow stores Content-Type as a single string like "text/plain"
+// or "multipart/mixed" in node.type — there is no separate `subtype` field.
+function findAttachments(node) {
     let attachments = [];
+    let topType = (node.type || '').split('/')[0];
 
-    if (node.disposition === 'attachment' ||
-        (node.type && node.type !== 'text' && node.type !== 'multipart' && !node.disposition)) {
+    let isAttachment =
+        node.disposition === 'attachment' ||
+        (node.type && topType !== 'text' && topType !== 'multipart' && !node.disposition);
+
+    if (isAttachment) {
         attachments.push({
-            part: path.length ? path.join('.') : '1',
-            type: `${node.type}/${node.subtype || 'octet-stream'}`,
+            part: node.part || '1',
+            type: node.type,
             size: node.size,
             filename: node.dispositionParameters?.filename ||
                      node.parameters?.name ||
@@ -185,9 +191,9 @@ function findAttachments(node, path = []) {
     }
 
     if (node.childNodes) {
-        node.childNodes.forEach((child, i) => {
-            attachments.push(...findAttachments(child, [...path, i + 1]));
-        });
+        for (let child of node.childNodes) {
+            attachments.push(...findAttachments(child));
+        }
     }
 
     return attachments;
@@ -308,8 +314,8 @@ async function getMessageContent(messageUid) {
         }
 
         // Find text and HTML parts
-        let textPart = findPartByType(message.bodyStructure, 'text', 'plain');
-        let htmlPart = findPartByType(message.bodyStructure, 'text', 'html');
+        let textPart = findPartByType(message.bodyStructure, 'text/plain');
+        let htmlPart = findPartByType(message.bodyStructure, 'text/html');
 
         let result = {};
 
@@ -339,14 +345,15 @@ async function getMessageContent(messageUid) {
     }
 }
 
-function findPartByType(node, type, subtype, path = '1') {
-    if (node.type === type && node.subtype === subtype) {
-        return path;
+// node.type holds the full Content-Type ("text/plain", "multipart/mixed", ...)
+// and node.part holds the IMAP part number (e.g. "1.2"). The root node has no `part`.
+function findPartByType(node, contentType) {
+    if (node.type === contentType) {
+        return node.part || '1';
     }
     if (node.childNodes) {
-        for (let i = 0; i < node.childNodes.length; i++) {
-            let childPath = path === '1' ? `${i + 1}` : `${path}.${i + 1}`;
-            let found = findPartByType(node.childNodes[i], type, subtype, childPath);
+        for (let child of node.childNodes) {
+            let found = findPartByType(child, contentType);
             if (found) return found;
         }
     }
@@ -609,11 +616,12 @@ async function gmailLabelsExample() {
             console.log('Labels:', message.labels ? Array.from(message.labels) : 'none');
         }
 
-        // Add a label to a message
-        await client.messageLabelsAdd('12345', ['MyLabel'], { uid: true });
+        // Add a Gmail label — labels are managed via the regular flag methods
+        // by passing `useLabels: true` in the options.
+        await client.messageFlagsAdd('12345', ['MyLabel'], { uid: true, useLabels: true });
 
-        // Remove a label
-        await client.messageLabelsRemove('12345', ['OldLabel'], { uid: true });
+        // Remove a Gmail label
+        await client.messageFlagsRemove('12345', ['OldLabel'], { uid: true, useLabels: true });
 
         // Search using Gmail's raw syntax
         let important = await client.search({

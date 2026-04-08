@@ -10,7 +10,7 @@ sidebar_position: 1
 
 ## Requirements
 
-- Node.js version 14.0 or higher
+- Node.js version 20.0 or higher
 - npm or yarn package manager
 
 ## Install via npm
