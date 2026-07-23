@@ -20,7 +20,7 @@ Creates a new IMAP client instance.
 
 - `options` (Object) - Configuration options
   - `host` (String) - IMAP server hostname (required, defaults to `localhost`)
-  - `port` (Number) - Port number (defaults to 993 if `secure: true`, otherwise 110)
+  - `port` (Number) - Port number (defaults to 993 if `secure: true`, otherwise 143)
   - `secure` (Boolean) - If `true`, establishes the connection directly over TLS. If `false` (default), uses plain TCP and may upgrade via STARTTLS unless `doSTARTTLS: false` is set. Setting `port: 993` without `secure` implies `secure: true`.
   - `doSTARTTLS` (Boolean) - Force STARTTLS behavior. `true` requires STARTTLS upgrade (fails if not supported), `false` disables STARTTLS entirely. Cannot be combined with `secure: true`.
   - `servername` (String) - Servername for SNI (for IP addresses or custom names)
@@ -38,6 +38,7 @@ Creates a new IMAP client instance.
   - `disableCompression` (Boolean) - Disable COMPRESS=DEFLATE
   - `disableBinary` (Boolean) - Disable BINARY extension
   - `disableAutoEnable` (Boolean) - Do not auto-enable extensions
+  - `disableIMAP4rev2` (Boolean) - Do not enable IMAP4rev2 mode even if the server supports it
   - `qresync` (Boolean) - Enable QRESYNC support
   - `maxIdleTime` (Number) - Restart IDLE after this many ms
   - `missingIdleCommand` (String) - Command if IDLE unsupported: 'NOOP', 'SELECT', or 'STATUS'
@@ -241,11 +242,13 @@ Lists available mailboxes.
 - `options` (Object) - Optional settings
   - `statusQuery` (Object) - Request status for each mailbox
     - `messages` (Boolean) - Include message count
-    - `recent` (Boolean) - Include recent count
+    - `recent` (Boolean) - Include recent count (always 0 on IMAP4rev2 sessions)
     - `uidNext` (Boolean) - Include next UID
     - `uidValidity` (Boolean) - Include UIDVALIDITY
     - `unseen` (Boolean) - Include unseen count
     - `highestModseq` (Boolean) - Include highest modseq
+    - `size` (Boolean) - Include total mailbox size in octets (requires STATUS=SIZE or IMAP4rev2)
+    - `deleted` (Boolean) - Include count of messages with the \Deleted flag (requires IMAP4rev2)
   - `specialUseHints` (Object) - Hints for special-use folders
     - `sent` (String) - Path to Sent folder
     - `trash` (String) - Path to Trash folder
@@ -277,6 +280,8 @@ Gets mailboxes organized as a tree structure.
 - `options` (Object) - Same as list()
 
 **Returns:** Promise&lt;ListTreeResponse&gt;
+
+If `statusQuery` was used, each tree node also carries a `status` property with the corresponding StatusObject.
 
 **Example:**
 
@@ -379,11 +384,13 @@ Gets mailbox status without selecting it.
 - `path` (String) - Mailbox path
 - `query` (Object) - Status items to fetch
   - `messages` (Boolean) - Total message count
-  - `recent` (Boolean) - Recent message count
+  - `recent` (Boolean) - Recent message count (always 0 on IMAP4rev2 sessions - the \Recent flag was removed in [RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html))
   - `uidNext` (Boolean) - Next UID value
   - `uidValidity` (Boolean) - UIDVALIDITY value
   - `unseen` (Boolean) - Unseen message count
   - `highestModseq` (Boolean) - Highest modseq value
+  - `size` (Boolean) - Total mailbox size in octets (requires [STATUS=SIZE (RFC 8438)](https://www.rfc-editor.org/rfc/rfc8438.html) or IMAP4rev2)
+  - `deleted` (Boolean) - Count of messages with the \Deleted flag (requires IMAP4rev2)
 
 **Returns:** Promise&lt;StatusObject&gt;
 
@@ -393,9 +400,13 @@ Gets mailbox status without selecting it.
 let status = await client.status('INBOX', {
     messages: true,
     unseen: true,
-    highestModseq: true
+    highestModseq: true,
+    size: true
 });
 console.log(`${status.unseen}/${status.messages} unseen`);
+if (typeof status.size === 'number') {
+    console.log(`Mailbox size: ${status.size} bytes`);
+}
 ```
 
 ### getQuota(path)
@@ -451,7 +462,7 @@ Do not run any other IMAP commands inside the fetch loop. This will cause a dead
 - `options` (Object) - Additional options
   - `uid` (Boolean) - Range contains UIDs
   - `changedSince` (BigInt) - Only messages with higher modseq
-  - `binary` (Boolean) - Request binary response
+  - `binary` (Boolean) - Request body parts via FETCH BINARY, so the server decodes the content-transfer-encoding (requires the [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.html) or IMAP4rev2). Parts that arrived decoded are listed in the `binaryParts` set of the response
 
 **Returns:** AsyncGenerator&lt;FetchMessageObject&gt;
 
@@ -582,9 +593,9 @@ Searches for messages in the currently selected mailbox.
   - `flagged` (Boolean) - Has \Flagged flag
   - `seen` (Boolean) - Has \Seen flag
   - `all` (Boolean) - All messages
-  - `new` (Boolean) - Recent but unseen
-  - `old` (Boolean) - Not recent
-  - `recent` (Boolean) - Has \Recent flag
+  - `new` (Boolean) - Recent but unseen (not available on IMAP4rev2 sessions)
+  - `old` (Boolean) - Not recent (not available on IMAP4rev2 sessions)
+  - `recent` (Boolean) - Has \Recent flag (not available on IMAP4rev2 sessions)
   - `from` (String) - From address contains
   - `to` (String) - To address contains
   - `cc` (String) - Cc address contains
@@ -614,6 +625,10 @@ Searches for messages in the currently selected mailbox.
   - `returnOptions` (Array) - Request ESEARCH ([RFC 4731](https://www.rfc-editor.org/rfc/rfc4731.html)) result. Each entry is one of `'MIN'`, `'MAX'`, `'COUNT'`, `'ALL'`, or `{ partial: '1:100' }` ([RFC 9394](https://www.rfc-editor.org/rfc/rfc9394.html)). When provided, returns an `ESearchResult` instead of a plain array (the client falls back to deriving `min`/`max`/`count`/`all` if the server lacks ESEARCH).
 
 **Returns:** Promise&lt;Number[] | ESearchResult | false&gt;
+
+:::note IMAP4rev2 and the \Recent flag
+[IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) removed the `\Recent` flag together with the `NEW`, `OLD`, and `RECENT` search keys. When the session runs in IMAP4rev2 mode (which ImapFlow enables automatically on supporting servers), searching with `new`, `old`, or `recent` rejects with an error whose `code` is `MissingServerExtension`. Set `disableIMAP4rev2: true` in the constructor options if you need these keys against a server that still supports IMAP4rev1.
+:::
 
 **Example:**
 
@@ -980,7 +995,7 @@ try {
 
 ### authenticated
 
-The authenticated username, or `false` if not authenticated.
+The authenticated username, or `false` if not authenticated. If the session was pre-authenticated by the server (PREAUTH greeting, no credentials used), the value is `true`.
 
 **Type:** string | boolean
 
@@ -1004,7 +1019,7 @@ Map of server capabilities reported by the server. Keys are capability names, va
 
 ### enabled
 
-Set of IMAP extensions that have been activated for this connection (via the `ENABLE` command).
+Set of IMAP extensions that have been activated for this connection (via the `ENABLE` command). For example, the set contains `IMAP4REV2` when the session runs in IMAP4rev2 mode.
 
 **Type:** Set&lt;string&gt;
 
@@ -1061,6 +1076,7 @@ For detailed TypeScript type definitions, see the included `lib/imap-flow.d.ts` 
 | source | Buffer | Raw message |
 | headers | Buffer | Raw headers |
 | bodyParts | Map | Body parts |
+| binaryParts | Set | Part identifiers from `bodyParts` that arrived via FETCH BINARY, i.e. with the content-transfer-encoding already decoded by the server |
 
 ### MailboxObject
 

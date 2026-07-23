@@ -64,6 +64,10 @@ await client.search({ recent: true });
 await client.search({ all: true });
 ```
 
+:::note IMAP4rev2 removed the \Recent flag
+The `new`, `old`, and `recent` search keys rely on the `\Recent` flag, which no longer exists in [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html). ImapFlow automatically enables IMAP4rev2 mode on supporting servers, and on such sessions these three keys reject with an error whose `code` is `MissingServerExtension`. If you depend on them, set `disableIMAP4rev2: true` in the constructor options (the server must still support IMAP4rev1).
+:::
+
 ### Address-based Searches
 
 Search by email addresses:

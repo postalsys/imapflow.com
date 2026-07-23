@@ -320,6 +320,21 @@ try {
 }
 ```
 
+### Binary Fetch (Server-Side Decoding)
+
+If the server supports the [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.html) or runs in [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) mode, you can pass `binary: true` in the fetch options. Body parts are then requested via `FETCH BINARY`, so the server removes the content-transfer-encoding (e.g. base64) before sending the data:
+
+```js
+let message = await client.fetchOne('*', { bodyParts: ['1'] }, { binary: true });
+
+// binaryParts lists which entries of bodyParts arrived already decoded
+if (message.binaryParts?.has('1')) {
+    console.log('Part 1 is already decoded by the server');
+}
+```
+
+Parts listed in `message.binaryParts` must not be decoded again. If the server does not support binary fetching, ImapFlow falls back to a regular `BODY` fetch and `binaryParts` is not set for those parts.
+
 ## Downloading Message Parts
 
 ### Basic Download
@@ -501,6 +516,7 @@ Every fetched message includes these properties:
 | `source` | Buffer | Raw message source |
 | `headers` | Buffer | Raw headers |
 | `bodyParts` | Map | Requested body parts |
+| `binaryParts` | Set | Part identifiers from `bodyParts` that arrived via FETCH BINARY, already decoded by the server |
 
 ## Next Steps
 

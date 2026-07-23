@@ -18,6 +18,7 @@ npm install imapflow
 ## Key Features
 
 - **Modern async/await API** - All methods return Promises for easy async handling
+- **IMAP4rev2 support** - Automatically enables and uses IMAP4rev2 (RFC 9051) when the server supports it
 - **Automatic extension handling** - IMAP extensions are handled automatically in the background
 - **Message streaming** - Efficient handling of large mailboxes with async iterators
 - **TypeScript support** - Full TypeScript type definitions included
@@ -32,10 +33,11 @@ npm install imapflow
 
 ## Supported IMAP Extensions
 
-ImapFlow implements [RFC 3501](https://www.rfc-editor.org/rfc/rfc3501.html) (IMAP4rev1) and automatically detects and uses the following IMAP extensions when available:
+ImapFlow implements [RFC 3501](https://www.rfc-editor.org/rfc/rfc3501.html) (IMAP4rev1) and [RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html) (IMAP4rev2). IMAP4rev2 mode is enabled automatically when the server supports it (opt out with the `disableIMAP4rev2` option). In addition, ImapFlow automatically detects and uses the following IMAP extensions when available:
 
 | Extension | RFC | Description |
 |-----------|-----|-------------|
+| IMAP4rev2 | [RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html) | Latest IMAP protocol revision, folds in many extensions |
 | IDLE | [RFC 2177](https://www.rfc-editor.org/rfc/rfc2177.html) | Real-time notifications without polling |
 | CONDSTORE | [RFC 7162](https://www.rfc-editor.org/rfc/rfc7162.html) | Efficient change tracking with modification sequences |
 | QRESYNC | [RFC 7162](https://www.rfc-editor.org/rfc/rfc7162.html) | Quick mailbox resynchronization |
@@ -47,6 +49,9 @@ ImapFlow implements [RFC 3501](https://www.rfc-editor.org/rfc/rfc3501.html) (IMA
 | UTF8=ACCEPT | [RFC 6855](https://www.rfc-editor.org/rfc/rfc6855.html) | UTF-8 mailbox names and headers |
 | BINARY | [RFC 3516](https://www.rfc-editor.org/rfc/rfc3516.html) | Binary content transfer |
 | SPECIAL-USE | [RFC 6154](https://www.rfc-editor.org/rfc/rfc6154.html) | Standard mailbox roles (Sent, Trash, etc.) |
+| ESEARCH | [RFC 4731](https://www.rfc-editor.org/rfc/rfc4731.html) | Extended search results (MIN, MAX, COUNT) |
+| LIST-STATUS | [RFC 5819](https://www.rfc-editor.org/rfc/rfc5819.html) | Mailbox status inline with LIST |
+| STATUS=SIZE | [RFC 8438](https://www.rfc-editor.org/rfc/rfc8438.html) | Total mailbox size in STATUS responses |
 | X-GM-EXT-1 | [Google](https://developers.google.com/workspace/gmail/imap/imap-extensions) | Gmail-specific features (labels, search) |
 | OBJECTID | [RFC 8474](https://www.rfc-editor.org/rfc/rfc8474.html) | Unique object identifiers |
 | QUOTA | [RFC 9208](https://www.rfc-editor.org/rfc/rfc9208.html) | Mailbox storage quota |

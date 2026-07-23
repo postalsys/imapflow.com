@@ -40,7 +40,7 @@ The IMAP server hostname.
 
 ### port
 
-The port to connect to. Defaults to `993` for secure connections. If `secure` is `false` and port is not specified, the library defaults to port `993` when auto-detecting TLS based on port.
+The port to connect to. Defaults to `993` (IMAPS) when `secure` is `true`, and to `143` (cleartext/STARTTLS) otherwise. As a special case, setting `port: 993` without specifying `secure` implies `secure: true`.
 
 ```js
 {
@@ -368,7 +368,7 @@ Disable [COMPRESS=DEFLATE extension (RFC 4978)](https://www.rfc-editor.org/rfc/r
 
 ### disableBinary
 
-Disable [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.html) for FETCH and APPEND operations:
+Disable [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.html) for FETCH and APPEND operations. This also disables the FETCH side of BINARY that IMAP4rev2 servers provide without a separate capability:
 
 ```js
 {
@@ -378,13 +378,25 @@ Disable [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.htm
 
 ### disableAutoEnable
 
-Do not automatically enable extensions ([CONDSTORE](https://www.rfc-editor.org/rfc/rfc7162.html), [UTF8=ACCEPT](https://www.rfc-editor.org/rfc/rfc6855.html), [QRESYNC](https://www.rfc-editor.org/rfc/rfc7162.html)):
+Do not automatically enable extensions ([CONDSTORE](https://www.rfc-editor.org/rfc/rfc7162.html), [UTF8=ACCEPT](https://www.rfc-editor.org/rfc/rfc6855.html), [QRESYNC](https://www.rfc-editor.org/rfc/rfc7162.html), [IMAP4rev2](https://www.rfc-editor.org/rfc/rfc9051.html)):
 
 ```js
 {
     disableAutoEnable: true
 }
 ```
+
+### disableIMAP4rev2
+
+By default, ImapFlow enables [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) mode when the server advertises support for it. Use this option as a targeted opt-out for servers with broken IMAP4rev2 implementations without losing the other auto-enabled extensions:
+
+```js
+{
+    disableIMAP4rev2: true
+}
+```
+
+Note that IMAP4rev2 removed the `\Recent` flag: on an IMAP4rev2 session the `recent` status counter is always reported as `0` and the `new`/`old`/`recent` search keys are rejected with an error.
 
 ### qresync
 

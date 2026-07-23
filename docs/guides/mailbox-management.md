@@ -163,7 +163,7 @@ When a mailbox is selected, `client.mailbox` contains:
 }
 ```
 
-`recent` and `unseen` counts are not part of `client.mailbox`. To obtain them, call `client.status(path, { recent: true, unseen: true })`.
+`recent` and `unseen` counts are not part of `client.mailbox`. To obtain them, call `client.status(path, { recent: true, unseen: true })`. Note that on IMAP4rev2 sessions `recent` is always reported as `0` - the `\Recent` flag was removed in [RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html).
 
 ### Read-Only Access
 
@@ -194,6 +194,20 @@ console.log('Messages:', status.messages);
 console.log('Unseen:', status.unseen);
 console.log('UID Next:', status.uidNext);
 ```
+
+On servers with [STATUS=SIZE (RFC 8438)](https://www.rfc-editor.org/rfc/rfc8438.html) or IMAP4rev2 you can also request the total mailbox size, and on IMAP4rev2 servers the count of messages flagged as deleted:
+
+```js
+let status = await client.status('INBOX', {
+    size: true,     // requires STATUS=SIZE or IMAP4rev2
+    deleted: true   // requires IMAP4rev2
+});
+
+console.log('Mailbox size (bytes):', status.size);
+console.log('Messages flagged \\Deleted:', status.deleted);
+```
+
+Items the current server cannot report are silently omitted from the result.
 
 ## Finding Mailboxes by Name
 
