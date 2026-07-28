@@ -33,12 +33,28 @@ const config: Config = {
 
   onBrokenLinks: 'throw',
 
-  // Plausible analytics
+  // Plausible analytics, loaded from emailengine.app rather than direct.
+  //
+  // EasyPrivacy, which uBlock Origin and AdGuard both enable by default, carries
+  // ://plausible.*/js/script. and ://plausible.*/api/event|. Both match on the
+  // hostname prefix, so the direct plausible.emailengine.dev URLs load for nobody
+  // running a blocker. emailengine.app proxies both paths first-party (Caddy
+  // handle blocks in its vhost on srv-04, see ../emailengine-web/CLAUDE.md).
+  //
+  // Unlike the other sites on that proxy, this one is a different registrable
+  // domain, so these are third-party requests: anyone blocking third-party
+  // scripts wholesale still loses analytics here. Serving it from an
+  // imapflow.com subdomain would avoid that, but this site is GitHub Pages and
+  // has no hostname on srv-04 to proxy from. Chosen deliberately over adding one.
+  //
+  // data-api must be absolute. A relative path would resolve against
+  // imapflow.com, which is GitHub Pages and has no such route.
   scripts: [
     {
-      src: 'https://plausible.emailengine.dev/js/script.js',
+      src: 'https://emailengine.app/a/pv.js',
       defer: true,
       'data-domain': 'imapflow.com',
+      'data-api': 'https://emailengine.app/a/e',
     },
   ],
 
