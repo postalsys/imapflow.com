@@ -39,3 +39,14 @@ npm run typecheck  # Run TypeScript type checking
 - Async event handlers on ImapFlow client are not awaited by Node.js EventEmitter
 - `getMailboxLock()` queues requests - avoid holding a lock while trying to acquire another in event handlers (causes deadlock)
 - Node.js 20.0+ required (uses modern JS features)
+
+## Analytics (Plausible, borrowed from emailengine.app)
+
+`docusaurus.config.ts` loads `https://emailengine.app/a/pv.js` and posts events to `https://emailengine.app/a/e`. Those are not app paths: they are Caddy `handle` blocks in the `emailengine.app` vhost on srv-04, proxying to the self-hosted Plausible container that `plausible.emailengine.dev` fronts. **If those routes are renamed, analytics here dies silently**, with no error anywhere.
+
+It is proxied because EasyPrivacy, which uBlock Origin and AdGuard both enable by default, carries `://plausible.*/js/script.` and `://plausible.*/api/event|`. Both match on the hostname prefix, so the direct `plausible.emailengine.dev` URLs load for nobody running a blocker.
+
+Two things specific to this site:
+
+- These are **third-party** requests, unlike the other sites on that proxy, which are all subdomains of `emailengine.app`. Blockers define third-party by registrable domain (eTLD+1), so anyone blocking third-party scripts wholesale still loses analytics here. The alternative was an `imapflow.com` subdomain pointed at srv-04 (what `www.nodemailer.com` does for nodemailer.com); that was considered and decided against, so this is a known, accepted gap rather than an oversight.
+- `data-api` must be absolute. Without it, or with a relative path, the script derives its endpoint from its own src origin and would post to `https://emailengine.app/api/event`, which is not routed.
