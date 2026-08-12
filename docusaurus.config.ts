@@ -158,15 +158,28 @@ const config: Config = {
           ],
         },
         {
+          title: 'Ecosystem',
+          items: [
+            {
+              label: 'EmailEngine',
+              href: 'https://emailengine.app/?utm_source=imapflow.com&utm_medium=footer&utm_campaign=oss-docs',
+            },
+            {
+              label: 'Nodemailer',
+              href: 'https://nodemailer.com/',
+            },
+            {
+              label: 'Ethereal',
+              href: 'https://ethereal.email/',
+            },
+          ],
+        },
+        {
           title: 'More',
           items: [
             {
               label: 'GitHub',
               href: 'https://github.com/postalsys/imapflow',
-            },
-            {
-              label: 'EmailEngine',
-              href: 'https://emailengine.app/',
             },
           ],
         },

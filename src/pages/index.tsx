@@ -11,10 +11,8 @@ import styles from './index.module.css';
 function EmailEngineBanner() {
   return (
     <section style={{
-      backgroundColor: '#f8f9fa',
-      padding: '2rem 0',
-      borderTop: '1px solid #e9ecef',
-      borderBottom: '1px solid #e9ecef',
+      padding: '2.5rem 0',
+      borderTop: '1px solid var(--ifm-toc-border-color)',
     }}>
       <div className="container">
         <div style={{
@@ -24,26 +22,26 @@ function EmailEngineBanner() {
           gap: '2rem',
           flexWrap: 'wrap',
         }}>
-          <a href="https://emailengine.app/?utm_source=imapflow&utm_campaign=imapflow&utm_medium=homepage" target="_blank" rel="noopener noreferrer">
+          <a href="https://emailengine.app/?utm_source=imapflow.com&utm_medium=homepage&utm_campaign=oss-docs" target="_blank" rel="noopener noreferrer">
             <img
               src="/img/EmailEngine_logo_vert.png"
-              alt="EmailEngine"
+              alt="EmailEngine logo"
               style={{ height: '80px' }}
             />
           </a>
-          <div style={{ maxWidth: '500px' }}>
+          <div style={{ maxWidth: '520px' }}>
             <Heading as="h3" style={{ marginBottom: '0.5rem' }}>
-              Looking for a complete email gateway?
+              Need the whole email integration, not just the IMAP client?
             </Heading>
-            <p style={{ marginBottom: '0.5rem', color: '#666' }}>
+            <p style={{ marginBottom: 0 }}>
               <a
-                href="https://emailengine.app/?utm_source=imapflow&utm_campaign=imapflow&utm_medium=homepage"
+                href="https://emailengine.app/?utm_source=imapflow.com&utm_medium=homepage&utm_campaign=oss-docs"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ fontWeight: 'bold' }}
               >
                 EmailEngine
-              </a> is a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts, webhooks for mailbox changes, OAuth2 support, and more.
+              </a> is a self-hosted email API built on ImapFlow by the same team. It turns Gmail, Microsoft 365, and IMAP accounts into REST endpoints, with managed OAuth2 and webhooks for incoming mail.
             </p>
           </div>
         </div>

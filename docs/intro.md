@@ -27,8 +27,8 @@ npm install imapflow
 - **Proxy support** - SOCKS and HTTP CONNECT proxy support for secure connections
 - **Gmail support** - Gmail-specific extensions including labels and raw search
 
-:::tip Looking for a complete email gateway solution?
-[**EmailEngine**](https://emailengine.app/?utm_source=imapflow&utm_campaign=imapflow&utm_medium=tip-link) is a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts, webhooks for mailbox changes, and advanced features like OAuth2, delayed delivery, open and click tracking, bounce detection, and more.
+:::tip ImapFlow powers EmailEngine
+ImapFlow was built as the IMAP engine for [**EmailEngine**](https://emailengine.app/?utm_source=imapflow.com&utm_medium=inline&utm_campaign=oss-docs&utm_content=intro), a self-hosted email API from the same team. EmailEngine turns Gmail, Microsoft 365, and IMAP accounts into REST endpoints, with managed OAuth2 and webhooks for incoming mail.
 :::
 
 ## Supported IMAP Extensions
@@ -98,8 +98,6 @@ main().catch(console.error);
 ## Why ImapFlow?
 
 Managing an IMAP connection can be complex, but if you're looking for an easy way to integrate email accounts, ImapFlow provides a clean, promise-based API that abstracts away the complexity of the IMAP protocol.
-
-For production email integration needs, ImapFlow was built for [EmailEngine Email API](https://emailengine.app/), a self-hosted software that converts IMAP accounts into easy-to-use REST interfaces.
 
 ## What's Next?
 

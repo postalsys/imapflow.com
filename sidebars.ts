@@ -43,34 +43,19 @@ const sidebars: SidebarsConfig = {
     {
       type: 'html',
       value: `
-        <div
-          style="
-            max-width: 260px;
-            margin: 3px auto 16px auto;
-            font-size: 13px;
-            margin-top: 20px;
-            color: #407ec9;
-            background-color: hsl(0, 0%, 98%);
-            box-shadow: 0 1px 4px 1px hsla(0, 0%, 0%, 0.1);
-          "
-        >
-          <a
-            href="https://emailengine.app/?utm_source=imapflow&utm_campaign=imapflow&utm_medium=sidebar"
-            style="
-              display: inline-block;
-              color: #407ec9;
-              text-decoration: none;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            "
-          >
-            <div style="display: flex; align-items: center; gap: 5px; width: 100%; background: white" target="_blank">
-              <div style="flex-basis: 50%">
-                <img src="/img/EmailEngine_logo_vert.png" style="width: 130px" />
-              </div>
-              <div style="flex-basis: 50%">
-                <div style="font-size: 13px; line-height: 1.5; text-align: left">Send and receive emails easily with Outlook and Gmail using OAuth2.</div>
-              </div>
-            </div>
+        <div style="margin: 24px 12px 12px; padding-top: 14px; border-top: 1px solid var(--ifm-toc-border-color);">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ifm-color-emphasis-600); margin-bottom: 10px;">From the ImapFlow team</div>
+          <a href="https://emailengine.app/?utm_source=imapflow.com&utm_medium=sidebar&utm_campaign=oss-docs" style="display: block; margin-bottom: 12px; text-decoration: none; color: var(--ifm-menu-color);">
+            <span style="display: block; font-size: 14px; font-weight: 600;">EmailEngine</span>
+            <span style="display: block; font-size: 12px; line-height: 1.45; color: var(--ifm-color-emphasis-700);">Self-hosted email API for Gmail, Microsoft 365, and IMAP. Built on ImapFlow.</span>
+          </a>
+          <a href="https://nodemailer.com/" style="display: block; margin-bottom: 12px; text-decoration: none; color: var(--ifm-menu-color);">
+            <span style="display: block; font-size: 14px; font-weight: 600;">Nodemailer</span>
+            <span style="display: block; font-size: 12px; line-height: 1.45; color: var(--ifm-color-emphasis-700);">The standard email sending library for Node.js</span>
+          </a>
+          <a href="https://ethereal.email/" style="display: block; text-decoration: none; color: var(--ifm-menu-color);">
+            <span style="display: block; font-size: 14px; font-weight: 600;">Ethereal</span>
+            <span style="display: block; font-size: 12px; line-height: 1.45; color: var(--ifm-color-emphasis-700);">Fake SMTP service for testing email sending</span>
           </a>
         </div>
       `,

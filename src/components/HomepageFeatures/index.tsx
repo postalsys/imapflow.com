@@ -35,7 +35,7 @@ const FeatureList: FeatureItem[] = [
     image: '/img/storing.png',
     description: (
       <>
-        Battle-tested in production as the foundation for EmailEngine Email API.
+        Battle-tested in production as the IMAP engine behind EmailEngine.
         Reliable connection management, error handling, and proxy support.
       </>
     ),

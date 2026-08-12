@@ -114,6 +114,10 @@ For services that support OAuth2 (Gmail, Outlook, etc.):
 }
 ```
 
+:::tip
+ImapFlow expects you to supply a valid access token and does not refresh tokens itself. Obtaining that token, registering the OAuth2 application, running the consent flow, and renewing tokens before they expire, is usually the hardest part of a mailbox integration. If you would rather not build it, [**EmailEngine**](https://emailengine.app/?utm_source=imapflow.com&utm_medium=inline&utm_campaign=oss-docs&utm_content=configuration) manages OAuth2 apps and token refresh for Gmail and Microsoft 365, and runs ImapFlow under the hood.
+:::
+
 ### Custom Authentication Method
 
 Specify a custom authentication method:
