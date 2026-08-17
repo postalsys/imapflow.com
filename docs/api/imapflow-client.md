@@ -381,7 +381,7 @@ Gets mailbox status without selecting it.
 
 **Parameters:**
 
-- `path` (String) - Mailbox path
+- `path` (String|Array) - Mailbox path (e.g., 'INBOX', ['INBOX', 'Subfolder'])
 - `query` (Object) - Status items to fetch
   - `messages` (Boolean) - Total message count
   - `recent` (Boolean) - Recent message count (always 0 on IMAP4rev2 sessions - the \Recent flag was removed in [RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html))
@@ -415,7 +415,7 @@ Gets quota information for a mailbox. Defaults to `INBOX` if no path is provided
 
 **Parameters:**
 
-- `path` (String) - Optional mailbox path (defaults to `'INBOX'`)
+- `path` (String|Array) - Optional mailbox path (defaults to `'INBOX'`), e.g. 'INBOX' or ['INBOX', 'Subfolder']
 
 **Returns:** Promise&lt;QuotaResponse|false&gt; - `false` if the server does not support the QUOTA extension or the path does not exist
 
