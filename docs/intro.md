@@ -21,7 +21,8 @@ npm install imapflow
 - **IMAP4rev2 support** - Automatically enables and uses IMAP4rev2 (RFC 9051) when the server supports it
 - **Automatic extension handling** - IMAP extensions are handled automatically in the background
 - **Message streaming** - Efficient handling of large mailboxes with async iterators
-- **TypeScript support** - Full TypeScript type definitions included
+- **TypeScript support** - Written in TypeScript, type definitions included
+- **ES modules and CommonJS** - `import { ImapFlow } from 'imapflow'` and `const { ImapFlow } = require('imapflow')` both work
 - **Comprehensive IMAP support** - Supports all major IMAP operations and extensions
 - **Mailbox locking** - Built-in locking mechanism for safe concurrent mailbox access
 - **Proxy support** - SOCKS and HTTP CONNECT proxy support for secure connections
@@ -59,7 +60,8 @@ ImapFlow implements [RFC 3501](https://www.rfc-editor.org/rfc/rfc3501.html) (IMA
 ## Quick Example
 
 ```js title="Basic usage example"
-const { ImapFlow } = require('imapflow');
+import { ImapFlow } from 'imapflow';
+// or in CommonJS: const { ImapFlow } = require('imapflow');
 
 const client = new ImapFlow({
     host: 'imap.example.com',

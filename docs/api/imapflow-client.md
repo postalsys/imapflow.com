@@ -1055,7 +1055,14 @@ Whether currently in IDLE mode.
 
 ## Type Definitions
 
-For detailed TypeScript type definitions, see the included `lib/imap-flow.d.ts` file in the package.
+The package ships TypeScript declarations for both the ES module and the CommonJS build, generated from the source. The option, result and event types are exported from the package root, so a program can import them directly. Only the documented methods and properties are visible to TypeScript, the internals of the client are stripped from the declarations.
+
+```typescript title="Importing types"
+import type { ImapFlowOptions, FetchMessageObject, MailboxObject, SearchObject, ImapFlowError } from 'imapflow';
+import { AuthenticationFailure } from 'imapflow';
+```
+
+Errors the client rejects with are plain `Error` objects that carry extra properties describing the failure, typed as `ImapFlowError`: `code` (for example `NoConnection`, `ETIMEOUT` or `LockTimeout`), `responseStatus` (`NO` or `BAD`), `responseText`, `serverResponseCode` (for example `AUTHENTICATIONFAILED`), `command` and `path`. A failed login rejects with an `AuthenticationFailure` instance, an `Error` subclass with `authenticationFailed` set to `true` and the server's response text in `response`.
 
 ### FetchMessageObject
 

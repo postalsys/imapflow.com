@@ -12,10 +12,11 @@ This guide will help you get started with ImapFlow in just a few minutes.
 
 ## Basic Connection
 
-First, import the ImapFlow class and create a new client instance:
+First, import the ImapFlow class and create a new client instance. The package works both as an ES module and with `require()`:
 
 ```js title="Create client instance"
 const { ImapFlow } = require('imapflow');
+// or as an ES module: import { ImapFlow } from 'imapflow';
 
 const client = new ImapFlow({
     host: 'imap.example.com',
