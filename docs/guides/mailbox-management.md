@@ -265,10 +265,11 @@ if (!quota) {
     console.log('Quota not supported');
 } else {
     if (quota.storage) {
-        console.log('Storage:', quota.storage.used, '/', quota.storage.limit);
+        // bytes, plus the usage as a percentage of the limit
+        console.log('Storage:', quota.storage.usage, '/', quota.storage.limit, quota.storage.status);
     }
-    if (quota.messages) {
-        console.log('Messages:', quota.messages.used, '/', quota.messages.limit);
+    if (quota.message) {
+        console.log('Messages:', quota.message.usage, '/', quota.message.limit);
     }
 }
 ```

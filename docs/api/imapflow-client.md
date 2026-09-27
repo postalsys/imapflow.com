@@ -417,14 +417,14 @@ Gets quota information for a mailbox. Defaults to `INBOX` if no path is provided
 
 - `path` (String|Array) - Optional mailbox path (defaults to `'INBOX'`), e.g. 'INBOX' or ['INBOX', 'Subfolder']
 
-**Returns:** Promise&lt;QuotaResponse|false&gt; - `false` if the server does not support the QUOTA extension or the path does not exist
+**Returns:** Promise&lt;[QuotaResponse](#quotaresponse)|false&gt; - `false` if the server does not support the QUOTA extension or the path does not exist
 
 **Example:**
 
 ```js
 let quota = await client.getQuota('INBOX');
 if (quota && quota.storage) {
-    console.log(`Used: ${quota.storage.used}/${quota.storage.limit} bytes`);
+    console.log(`Used: ${quota.storage.usage}/${quota.storage.limit} bytes (${quota.storage.status})`);
 }
 ```
 
@@ -1100,6 +1100,17 @@ Errors the client rejects with are plain `Error` objects that carry extra proper
 | uidNext | Number | Next UID |
 | exists | Number | Message count |
 | readOnly | Boolean | Read-only mode |
+
+### QuotaResponse
+
+| Property | Type | Description |
+|----------|------|-------------|
+| path | String | Mailbox path the quota applies to |
+| quotaRoot | String | Quota root the server reported for the mailbox, if any |
+| storage | Object | The STORAGE resource, if the server reports one: `usage` and `limit` in bytes, `status` as the usage in percent of the limit, e.g. `"50%"` |
+| message | Object | The MESSAGE resource, if the server reports one: `usage` and `limit` as message counts, `status` as above |
+
+Any other resource the server reports is added under its lowercased name with the same `usage`, `limit` and `status` fields, for example `mailbox` for the MAILBOX resource of RFC 9208. `usage` or `limit` is left out when the server did not send a usable number for it, and `status` is only set once a limit above zero is known.
 
 ## See Also
 
