@@ -13,7 +13,7 @@ sidebar_position: 1
 - Node.js version 20.0 or higher
 - npm or yarn package manager
 
-ImapFlow also runs on Bun and on Cloudflare Workers, see [Other runtimes](#other-runtimes) below.
+ImapFlow also runs on Bun, Deno and Cloudflare Workers, see [Other runtimes](#other-runtimes) below.
 
 ## Install via npm
 
@@ -85,13 +85,47 @@ Events are typed from the event name, so the listener of `client.on('exists', ..
 
 ## Other Runtimes
 
-The ES module build runs on [Bun](https://bun.sh/), tested against the latest Bun release, and on [Cloudflare Workers](https://developers.cloudflare.com/workers/) with the `nodejs_compat` compatibility flag.
+The ES module build runs on [Bun](https://bun.sh/), tested against the latest Bun release, on [Deno](#deno), and on [Cloudflare Workers](https://developers.cloudflare.com/workers/) with the `nodejs_compat` compatibility flag.
 
 ```toml title="wrangler.toml"
 compatibility_flags = ["nodejs_compat"]
 ```
 
 On Workers, connect with implicit TLS (`secure: true`, usually port 993) or in cleartext. The runtime can not upgrade an already connected socket, so a STARTTLS negotiation fails with a TLS error, and it does not allow turning certificate validation off, so `tls: { rejectUnauthorized: false }` is rejected with `ERR_OPTION_NOT_IMPLEMENTED`. COMPRESS=DEFLATE, IDLE and the default Pino logger work as on Node.js.
+
+### Deno
+
+ImapFlow runs on [Deno](https://deno.com/) 2 through its npm compatibility layer. Import it with an `npm:` specifier, or add it to the project with `deno add npm:imapflow` and import it as `imapflow`. The shipped type declarations are picked up by `deno check` as well.
+
+```js title="main.js"
+import { ImapFlow } from 'npm:imapflow';
+
+const client = new ImapFlow({
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    auth: {
+        user: 'user@example.com',
+        pass: 'password'
+    },
+    logger: false
+});
+
+await client.connect();
+console.log(await client.status('INBOX', { messages: true }));
+await client.logout();
+```
+
+The program needs network, environment and hostname access. The environment and hostname permissions are required even with `logger: false`, because the Pino logger is loaded together with the library and reads both when it loads.
+
+```bash title="Run with Deno"
+deno run --allow-net=imap.example.com:993 --allow-env --allow-sys=hostname main.js
+```
+
+Implicit TLS, STARTTLS, `tls: { rejectUnauthorized: false }`, COMPRESS=DEFLATE, IDLE and the default Pino logger work as on Node.js. The differences show up only when the server ends the connection abruptly:
+
+- If the server sends a response and closes the connection immediately after it, Deno reports the close before that response is processed. The connection is still closed and every pending command is rejected, but a final `BYE` text does not make it into `error.reason` or `client.byeReason`, and a server that drops the connection right after accepting STARTTLS produces a `ClosedAfterConnectText` error without the `tlsFailed` flag.
+- A connection reset after the TLS layer is established is reported as `ClosedAfterConnectTLS` instead of `ECONNRESET`.
 
 ## Upgrading from ImapFlow 1.x
 
