@@ -108,6 +108,34 @@ try {
 }
 ```
 
+## Parsing Messages
+
+Fetching with `source: true` returns the raw RFC 822 source of a message as a Buffer. ImapFlow does not turn that source into plain text, HTML and attachments, so use a MIME parser such as [postal-mime](https://www.npmjs.com/package/postal-mime) for that:
+
+```bash title="Install postal-mime"
+npm install postal-mime
+```
+
+```js title="Parse the latest message"
+const PostalMime = require('postal-mime');
+
+let lock = await client.getMailboxLock('INBOX');
+try {
+    // fetchOne() resolves to false when the mailbox is empty
+    let msg = await client.fetchOne('*', { source: true });
+    if (msg) {
+        const email = await PostalMime.parse(msg.source);
+        console.log('Subject:', email.subject);
+        console.log('Text:', email.text);
+        console.log('Attachments:', email.attachments.map(a => a.filename));
+    }
+} finally {
+    lock.release();
+}
+```
+
+See the [Parsing Messages examples](../examples/parsing-messages) for parsing `download()` streams, saving attachments and more.
+
 ## Iterating Over Messages
 
 Use async iteration to process multiple messages:
@@ -127,6 +155,22 @@ try {
 :::warning Important
 Do not run any other IMAP commands inside the `fetch()` loop or it will deadlock. Use `fetchAll()` if you need to process messages after fetching.
 :::
+
+## Handling Errors and Disconnects
+
+The client is an `EventEmitter`. Attach an `error` listener, otherwise an error emitted after `connect()` has resolved (a socket timeout, for example) is thrown as an uncaught exception. The `close` event fires when the connection ends for any reason.
+
+```js title="Error and close events"
+client.on('error', err => {
+    console.error('IMAP error:', err.code, err.message);
+});
+
+client.on('close', () => {
+    console.log('Connection closed');
+});
+```
+
+ImapFlow does not reconnect on its own, and an `ImapFlow` instance can only connect once. Calling `connect()` a second time rejects with the `InstanceReused` error code, so create a new client to connect again.
 
 ## Closing the Connection
 
@@ -171,7 +215,8 @@ async function main() {
 
         if (client.mailbox.exists > 0) {
             // Fetch latest 10 messages (or all if less than 10)
-            let messages = await client.fetchAll('*:-10', {
+            let first = Math.max(1, client.mailbox.exists - 9);
+            let messages = await client.fetchAll(`${first}:*`, {
                 envelope: true,
                 flags: true
             });
@@ -204,10 +249,12 @@ const client = new ImapFlow({
     secure: true,
     auth: {
         user: 'your.email@gmail.com',
-        accessToken: 'your-oauth2-token'  // Gmail requires OAuth2
+        accessToken: 'your-oauth2-token'  // OAuth2 access token
     }
 });
 ```
+
+Gmail also accepts an [app password](https://support.google.com/accounts/answer/185833) in `pass` for accounts with 2-Step Verification enabled, but OAuth2 is the recommended method.
 
 ### Outlook/Office 365
 
@@ -218,10 +265,12 @@ const client = new ImapFlow({
     secure: true,
     auth: {
         user: 'your.email@outlook.com',
-        accessToken: 'your-oauth2-token'  // OAuth2 recommended
+        accessToken: 'your-oauth2-token'  // Microsoft requires OAuth2
     }
 });
 ```
+
+Microsoft has turned off password (basic) authentication for IMAP in Exchange Online, so Microsoft 365 and Outlook.com accounts need an OAuth2 access token. ImapFlow does not obtain or refresh tokens, it uses the token you pass with the XOAUTH2 or OAUTHBEARER mechanism, whichever the server advertises.
 
 ### Yahoo Mail
 

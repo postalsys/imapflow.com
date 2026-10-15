@@ -63,11 +63,11 @@ const client: ImapFlow = new ImapFlow({
 });
 ```
 
-The option, result and event types are exported from the package root, so a program can name them directly. The `AuthenticationFailure` error class and the `ImapFlowError` shape of the errors the client rejects with are exported as well.
+The option, result and event types are exported from the package root, so a program can name them directly. The `AuthenticationFailure` error class, the `ImapFlowError` shape of the errors the client rejects with, and the `ImapFlowErrorCode` object of known error codes (for checks like `err.code === ImapFlowErrorCode.NoConnection`) are exported as well.
 
 ```typescript title="Importing types"
 import type { ImapFlowOptions, FetchMessageObject, MailboxObject, SearchObject, ImapFlowEvents } from 'imapflow';
-import { AuthenticationFailure } from 'imapflow';
+import { AuthenticationFailure, ImapFlowErrorCode } from 'imapflow';
 
 const options: ImapFlowOptions = {
     host: 'imap.example.com',

@@ -18,11 +18,11 @@ Creates a new IMAP client instance.
 
 **Parameters:**
 
-- `options` (Object) - Configuration options
-  - `host` (String) - IMAP server hostname (required, defaults to `localhost`)
+- `options` (ImapFlowOptions) - Configuration options
+  - `host` (String) - IMAP server hostname (defaults to `localhost`)
   - `port` (Number) - Port number (defaults to 993 if `secure: true`, otherwise 143)
   - `secure` (Boolean) - If `true`, establishes the connection directly over TLS. If `false` (default), uses plain TCP and may upgrade via STARTTLS unless `doSTARTTLS: false` is set. Setting `port: 993` without `secure` implies `secure: true`.
-  - `doSTARTTLS` (Boolean) - Force STARTTLS behavior. `true` requires STARTTLS upgrade (fails if not supported), `false` disables STARTTLS entirely. Cannot be combined with `secure: true`.
+  - `doSTARTTLS` (Boolean) - STARTTLS ([RFC 2595](https://www.rfc-editor.org/rfc/rfc2595.html)) policy for a connection not opened with `secure: true`. `true` requires the upgrade (connecting fails if the server does not offer STARTTLS), `false` keeps the connection in cleartext. If not set, the connection upgrades when the server offers STARTTLS and otherwise continues in cleartext with a warning logged. Setting both `doSTARTTLS: true` and `secure: true` is rejected as a misconfiguration.
   - `servername` (String) - Servername for SNI (for IP addresses or custom names)
   - `auth` (Object) - Authentication credentials
     - `user` (String) - Username
@@ -30,26 +30,32 @@ Creates a new IMAP client instance.
     - `accessToken` (String) - OAuth2 access token (alternative to pass)
     - `loginMethod` (String) - Optional override: 'LOGIN', 'AUTH=LOGIN', or 'AUTH=PLAIN'
     - `authzid` (String) - Authorization identity for SASL PLAIN (admin impersonation)
-  - `logger` (Object|Boolean) - Logger instance or false to disable
-  - `tls` (Object) - Additional TLS options
-  - `proxy` (String) - Proxy URL (socks://, socks4://, socks5://, http://)
-  - `clientInfo` (Object) - Client identification for ID extension
-  - `disableAutoIdle` (Boolean) - Disable automatic IDLE mode
-  - `disableCompression` (Boolean) - Disable COMPRESS=DEFLATE
-  - `disableBinary` (Boolean) - Disable BINARY extension
-  - `disableAutoEnable` (Boolean) - Do not auto-enable extensions
-  - `disableIMAP4rev2` (Boolean) - Do not enable IMAP4rev2 mode even if the server supports it
-  - `qresync` (Boolean) - Enable QRESYNC support
-  - `maxIdleTime` (Number) - Restart IDLE after this many ms
-  - `missingIdleCommand` (String) - Command if IDLE unsupported: 'NOOP', 'SELECT', or 'STATUS'
-  - `connectionTimeout` (Number) - Connection timeout in ms (default: 90000)
-  - `greetingTimeout` (Number) - Greeting timeout in ms (default: 16000)
+  - `logger` (Object|Boolean) - Logger object with `debug`, `info`, `warn` and `error` methods (`trace` and `fatal` are used when present), for example a pino or bunyan instance. Set to `false` to disable logging, omit to use the built-in pino logger
+  - `tls` (Object) - Additional TLS options passed to Node.js `tls.connect()`
+  - `proxy` (String) - Proxy URL. Supports HTTP CONNECT (`http:`, `https:`) and SOCKS (`socks:`, `socks4:`, `socks4a:`, `socks5:`) proxies. IPv6 proxy endpoints use URL form, e.g. `socks5://[2001:db8::1]:1080`
+  - `clientInfo` (Object) - Client identification sent with the ID command ([RFC 2971](https://www.rfc-editor.org/rfc/rfc2971.html)): `name`, `version`, `os`, `vendor`, `support-url`, `date` and any other field
+  - `disableAutoIdle` (Boolean) - Do not start IDLE ([RFC 2177](https://www.rfc-editor.org/rfc/rfc2177.html)) automatically when the connection is inactive
+  - `autoIdleDelay` (Number|String) - How long in ms the connection has to be inactive before IDLE starts automatically (default: 15000). Capped below `socketTimeout`. Use `disableAutoIdle` to turn auto-IDLE off rather than a very large delay
+  - `disableCompression` (Boolean) - Do not use COMPRESS=DEFLATE ([RFC 4978](https://www.rfc-editor.org/rfc/rfc4978.html)) even if the server supports it
+  - `disableBinary` (Boolean) - Ignore the BINARY extension ([RFC 3516](https://www.rfc-editor.org/rfc/rfc3516.html)) for FETCH and APPEND
+  - `disableAutoEnable` (Boolean) - Do not ENABLE ([RFC 5161](https://www.rfc-editor.org/rfc/rfc5161.html)) supported extensions automatically
+  - `disableIMAP4rev2` (Boolean) - Do not enable IMAP4rev2 ([RFC 9051](https://www.rfc-editor.org/rfc/rfc9051.html)) mode even if the server advertises it, and do not treat the advertisement as support for anything IMAP4rev2 implies
+  - `qresync` (Boolean) - Use QRESYNC ([RFC 7162](https://www.rfc-editor.org/rfc/rfc7162.html)) instead of CONDSTORE. EXPUNGE notifications then include the UID
+  - `maxIdleTime` (Number) - If set, break and restart IDLE every `maxIdleTime` ms
+  - `missingIdleCommand` (String) - Command to run if IDLE is not supported: `'NOOP'` (default), `'SELECT'` or `'STATUS'`
+  - `connectionTimeout` (Number) - Time budget in ms for a usable transport, covering DNS, proxy negotiation and the TCP/TLS handshake (default: 90000). Expiry rejects with code `CONNECT_TIMEOUT`
+  - `greetingTimeout` (Number) - How long in ms to wait for the server greeting (default: 16000)
   - `socketTimeout` (Number) - Socket inactivity timeout in ms (default: 300000)
-  - `emitLogs` (Boolean) - Emit log events instead of logging
-  - `logRaw` (Boolean) - Log raw socket data in base64
-  - `verifyOnly` (Boolean) - Connect and disconnect immediately
-  - `includeMailboxes` (Boolean) - With verifyOnly, also list mailboxes
-  - `expungeHandler` (Function) - Custom EXPUNGE event handler
+  - `maxLineLength` (Number) - Maximum length in bytes of a single response line (default: 1 GB, `Infinity` disables). Exceeding it fails the connection with code `LineTooLarge`
+  - `maxLiteralSize` (Number) - Maximum size in bytes of a single IMAP literal (default: 1 GB, `Infinity` disables). Exceeding it fails the connection with code `LiteralTooLarge`
+  - `maxResponseSize` (Number) - Maximum total size in bytes of one assembled response (default: 2 GB, `Infinity` disables). Keep it above `maxLiteralSize`. Exceeding it fails the connection with code `ResponseTooLarge`
+  - `maxLockHoldTime` (Number|Boolean) - Log a warning when a mailbox lock has been held longer than this many ms, to catch forgotten `release()` calls (default: 30 minutes). Set to `0` or `false` to disable
+  - `idHashAlgorithm` (String) - Hash algorithm for the fallback message `id` derived from the mailbox path, UIDVALIDITY and UID when the server provides no email ID (default: `'md5'`). Hosts running OpenSSL in FIPS mode need another one, e.g. `'sha256'`
+  - `emitLogs` (Boolean) - Also emit every log entry as a `log` event
+  - `logRaw` (Boolean) - Log data read from and written to the socket, encoded in base64. Client frames carrying credentials are replaced with a placeholder
+  - `verifyOnly` (Boolean) - Log out automatically after successful authentication
+  - `includeMailboxes` (Boolean) - With `verifyOnly`, also list mailboxes
+  - `expungeHandler` (Function) - Called with the expunge payload for every expunged message instead of emitting the `expunge` event. May return a Promise
   - `id` (String) - Custom instance ID for logs
 
 **Returns:** ImapFlow instance
@@ -72,7 +78,7 @@ const client = new ImapFlow({
 
 ### connect()
 
-Establishes connection to the IMAP server and authenticates.
+Establishes connection to the IMAP server and authenticates. Rejects if connecting or authenticating fails. An instance can only connect once, calling `connect()` again rejects with code `InstanceReused`, so create a new `ImapFlow` object to reconnect.
 
 **Returns:** Promise&lt;void&gt;
 
@@ -141,7 +147,9 @@ console.log(`Sent ${sent} bytes, received ${received} bytes`);
 
 Detaches the underlying sockets from the IMAP pipeline and returns the read and write sockets. After calling this, ImapFlow no longer interacts with the connection.
 
-**Returns:** `{ readSocket, writeSocket }`
+Call it while the connection is not idling. An IDLE in progress is not broken first, so the server still expects `DONE`.
+
+**Returns:** `{ readSocket, writeSocket, socket }` - `readSocket` is the read stream (the inflated stream if compression is active), `writeSocket` the write stream, and `socket` the raw underlying socket
 
 ### noop()
 
@@ -157,9 +165,9 @@ await client.noop();
 
 ### idle()
 
-Enters IDLE mode to wait for server notifications. Automatically called when `disableAutoIdle` is false.
+Enters IDLE mode ([RFC 2177](https://www.rfc-editor.org/rfc/rfc2177.html)) to wait for server notifications about the currently opened mailbox. Only needed when `disableAutoIdle` is `true`, otherwise IDLE starts automatically on inactivity. A manual `idle()` call does not resolve until IDLE is finished, which happens when some other command is issued.
 
-**Returns:** Promise&lt;boolean&gt;
+**Returns:** Promise&lt;boolean|undefined&gt; - `false` if IDLE failed, `undefined` otherwise
 
 **Example:**
 
@@ -172,7 +180,7 @@ await client.idle();
 
 Upgrades the current connection to TLS using STARTTLS. This is typically called automatically when `secure: false` and the server supports STARTTLS.
 
-**Returns:** Promise&lt;Boolean&gt; - Returns `true` if upgrade succeeded, `false` if already using TLS or STARTTLS not supported.
+**Returns:** Promise&lt;Boolean&gt; - `true` if the connection is now protected by TLS (direct TLS or STARTTLS), `false` otherwise. Rejects if STARTTLS is required (`doSTARTTLS: true`) but not possible.
 
 **Example:**
 
@@ -180,7 +188,7 @@ Upgrades the current connection to TLS using STARTTLS. This is typically called 
 // Manual STARTTLS upgrade (usually not needed)
 const upgraded = await client.upgradeToSTARTTLS();
 if (upgraded) {
-    console.log('Connection upgraded to TLS');
+    console.log('Connection is protected by TLS');
 }
 ```
 
@@ -188,7 +196,7 @@ if (upgraded) {
 
 ### getMailboxLock(path, options)
 
-Selects a mailbox and acquires a lock for safe operations. Recommended over `mailboxOpen()` for transactional safety.
+Opens a mailbox if it is not already open and acquires a lock. The next `getMailboxLock()` call is queued until the previous lock is released. Recommended over `mailboxOpen()` for transactional safety.
 
 **Parameters:**
 
@@ -196,6 +204,10 @@ Selects a mailbox and acquires a lock for safe operations. Recommended over `mai
 - `options` (Object) - Optional settings
   - `readOnly` (Boolean) - Open in read-only mode
   - `description` (String) - Description for debugging/logging
+  - `acquireTimeout` (Number) - How long in ms to wait for the lock. If it is not granted in time, the promise rejects with an error whose `code` is `LockTimeout`. Defaults to no timeout
+  - `maxLockHoldTime` (Number|Boolean) - Per-lock override of the constructor option of the same name. `0` or `false` disables the long-hold warning for this lock
+  - `changedSince` (BigInt|Number|String) - QRESYNC, see `mailboxOpen()`. Only applied when the lock actually selects the mailbox, not when it is already open
+  - `uidValidity` (BigInt|Number|String) - QRESYNC, see `mailboxOpen()`
 
 **Returns:** Promise&lt;MailboxLockObject&gt;
 
@@ -224,14 +236,16 @@ Opens a mailbox directly without locking. Use `getMailboxLock()` for safer opera
 - `options` (Object) - Optional settings
   - `readOnly` (Boolean) - Open in read-only mode (uses IMAP `EXAMINE` instead of `SELECT`)
   - `description` (String) - Optional description used in lock-tracking trace logs
+  - `changedSince` (BigInt|Number|String) - HIGHESTMODSEQ from an earlier session. With `uidValidity` and QRESYNC ([RFC 7162](https://www.rfc-editor.org/rfc/rfc7162.html)) enabled (`qresync: true`), changes since then are reported as `flags` and `expunge` events
+  - `uidValidity` (BigInt|Number|String) - UIDVALIDITY known from the previous session, required with `changedSince`
 
-**Returns:** Promise&lt;MailboxObject&gt;
+**Returns:** Promise&lt;[MailboxObject](#mailboxobject)&gt;. Rejects if the mailbox does not exist or can not be opened.
 
 ### mailboxClose()
 
 Closes the currently open mailbox.
 
-**Returns:** Promise&lt;Boolean&gt;
+**Returns:** Promise&lt;Boolean&gt; - Whether the operation succeeded
 
 ### list(options)
 
@@ -254,8 +268,10 @@ Lists available mailboxes.
     - `trash` (String) - Path to Trash folder
     - `junk` (String) - Path to Junk folder
     - `drafts` (String) - Path to Drafts folder
+    - `archive` (String) - Path to Archive folder
+  - `listOnly` (Boolean) - Only run LIST, without LSUB, subscription lookups or status queries
 
-**Returns:** Promise&lt;Array&lt;ListResponse&gt;&gt;
+**Returns:** Promise&lt;Array&lt;[ListResponse](#listresponse)&gt;&gt;
 
 **Example:**
 
@@ -281,7 +297,7 @@ Gets mailboxes organized as a tree structure.
 
 **Returns:** Promise&lt;ListTreeResponse&gt;
 
-If `statusQuery` was used, each tree node also carries a `status` property with the corresponding StatusObject.
+The root node has `root: true` and only a `folders` array. Other nodes carry `path`, `name`, `delimiter`, `flags`, `specialUse`, `listed`, `subscribed`, `disabled` (`true` if the mailbox can not be selected) and `folders`. If `statusQuery` was used, each node also carries a `status` property with the corresponding StatusObject.
 
 **Example:**
 
@@ -303,11 +319,11 @@ printTree(tree);
 
 ### mailboxCreate(path)
 
-Creates a new mailbox.
+Creates a new mailbox and subscribes to it. Rejects if the mailbox can not be created.
 
 **Parameters:**
 
-- `path` (String|Array) - Path for the new mailbox
+- `path` (String|Array) - Path for the new mailbox. Unicode is allowed. An array is joined with the server's delimiter, and the namespace prefix is added automatically if required
 
 **Returns:** Promise&lt;MailboxCreateResponse&gt;
 
@@ -324,14 +340,17 @@ console.log('Created:', result.created);
 
 ### mailboxRename(oldPath, newPath)
 
-Renames a mailbox.
+Renames a mailbox. Rejects if the mailbox does not exist or can not be renamed.
 
 **Parameters:**
 
-- `oldPath` (String|Array) - Current mailbox path
+- `path` (String|Array) - Current mailbox path
 - `newPath` (String|Array) - New mailbox path
 
 **Returns:** Promise&lt;MailboxRenameResponse&gt;
+
+- `path` (String) - Full path of the renamed mailbox
+- `newPath` (String) - New full mailbox path
 
 **Example:**
 
@@ -341,13 +360,15 @@ await client.mailboxRename('Old', 'New');
 
 ### mailboxDelete(path)
 
-Deletes a mailbox and all its messages.
+Deletes a mailbox and all its messages. Rejects if the mailbox does not exist or can not be deleted.
 
 **Parameters:**
 
 - `path` (String|Array) - Mailbox path to delete
 
 **Returns:** Promise&lt;MailboxDeleteResponse&gt;
+
+- `path` (String) - Full path of the deleted mailbox
 
 **Example:**
 
@@ -363,7 +384,7 @@ Subscribes to a mailbox.
 
 - `path` (String|Array) - Mailbox path
 
-**Returns:** Promise&lt;Boolean&gt;
+**Returns:** Promise&lt;Boolean&gt; - `true` if the operation succeeded
 
 ### mailboxUnsubscribe(path)
 
@@ -373,11 +394,11 @@ Unsubscribes from a mailbox.
 
 - `path` (String|Array) - Mailbox path
 
-**Returns:** Promise&lt;Boolean&gt;
+**Returns:** Promise&lt;Boolean&gt; - `true` if the operation succeeded
 
 ### status(path, query)
 
-Gets mailbox status without selecting it.
+Gets mailbox status without selecting it. Only the requested values are returned.
 
 **Parameters:**
 
@@ -392,7 +413,7 @@ Gets mailbox status without selecting it.
   - `size` (Boolean) - Total mailbox size in octets (requires [STATUS=SIZE (RFC 8438)](https://www.rfc-editor.org/rfc/rfc8438.html) or IMAP4rev2)
   - `deleted` (Boolean) - Count of messages with the \Deleted flag (requires IMAP4rev2)
 
-**Returns:** Promise&lt;StatusObject&gt;
+**Returns:** Promise&lt;StatusObject|false&gt; - an object with `path` plus the requested values, or `false` if the server rejected the request
 
 **Example:**
 
@@ -411,7 +432,7 @@ if (typeof status.size === 'number') {
 
 ### getQuota(path)
 
-Gets quota information for a mailbox. Defaults to `INBOX` if no path is provided.
+Gets quota information ([RFC 9208](https://www.rfc-editor.org/rfc/rfc9208.html)) for a mailbox. Defaults to `INBOX` if no path is provided.
 
 **Parameters:**
 
@@ -440,8 +461,8 @@ Do not run any other IMAP commands inside the fetch loop. This will cause a dead
 
 **Parameters:**
 
-- `range` (String|Array|SearchObject) - Message range or search query
-  - String: '1:10', '1:*', '*:-10'
+- `range` (String|Number|Array|SearchObject) - Message range or search query
+  - String: '1:10', '1:*', '1,5,10:20'
   - Array: [1, 2, 3, 10]
   - SearchObject: `{ seen: false }`
 - `query` (FetchQueryObject) - Fetch query options
@@ -451,20 +472,21 @@ Do not run any other IMAP commands inside the fetch loop. This will cause a dead
   - `bodyStructure` (Boolean) - Include MIME structure
   - `internalDate` (Boolean) - Include internal date
   - `size` (Boolean) - Include message size
-  - `source` (Boolean|Object) - Include message source
-  - `headers` (Boolean|Array) - Include headers
-  - `bodyParts` (Array) - Include specific body parts
-  - `threadId` (Boolean) - Include thread ID
-  - `labels` (Boolean) - Include Gmail labels
+  - `source` (Boolean|Object) - Include message source. Pass `{ start, maxLength }` to fetch only a byte range
+  - `headers` (Boolean|Array) - Include all headers, or only the listed header keys
+  - `bodyParts` (Array) - Include specific body parts. Each entry is a part identifier string or `{ key, start, maxLength }`
+  - `threadId` (Boolean) - Include thread ID (requires OBJECTID ([RFC 8474](https://www.rfc-editor.org/rfc/rfc8474.html)) or `X-GM-EXT-1`)
+  - `labels` (Boolean) - Include Gmail labels (requires `X-GM-EXT-1`)
+  - `emailId` (Boolean) - Accepted but has no effect, the email ID is always requested when the server supports OBJECTID or `X-GM-EXT-1`
   - `fast` (Boolean) - Macro: flags, internalDate, size
   - `all` (Boolean) - Macro: fast + envelope
   - `full` (Boolean) - Macro: all + bodyStructure
 - `options` (Object) - Additional options
   - `uid` (Boolean) - Range contains UIDs
-  - `changedSince` (BigInt) - Only messages with higher modseq
+  - `changedSince` (BigInt|Number) - Only messages with a higher modseq (CONDSTORE, [RFC 7162](https://www.rfc-editor.org/rfc/rfc7162.html))
   - `binary` (Boolean) - Request body parts via FETCH BINARY, so the server decodes the content-transfer-encoding (requires the [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.html) or IMAP4rev2). Parts that arrived decoded are listed in the `binaryParts` set of the response
 
-**Returns:** AsyncGenerator&lt;FetchMessageObject&gt;
+**Returns:** AsyncGenerator&lt;[FetchMessageObject](#fetchmessageobject)&gt;
 
 **Example:**
 
@@ -479,7 +501,7 @@ for await (let message of client.fetch('1:*', {
 
 ### fetchAll(range, query, options)
 
-Fetches all messages and returns an array. Safer for processing but uses more memory.
+Fetches all messages before resolving and returns an array. Safe to run other commands while processing the result, but every message is kept in memory, so avoid large ranges like `1:*` on big mailboxes.
 
 **Parameters:** Same as fetch()
 
@@ -500,13 +522,14 @@ Fetches a single message.
 
 **Parameters:**
 
-- `seq` (String|Number) - Sequence number or UID, or '*' for latest
+- `seq` (String|Number) - Sequence number or UID, or '*' for the last message in the mailbox
 - `query` (FetchQueryObject) - Fetch query options
 - `options` (Object) - Additional options
-  - `uid` (Boolean) - seq is a UID
+  - `uid` (Boolean) - seq is a UID (ignored for `'*'`)
+  - `changedSince` (BigInt|Number) - Only return the message if its modseq is higher
   - `binary` (Boolean) - Request binary response
 
-**Returns:** Promise&lt;FetchMessageObject|Boolean&gt;
+**Returns:** Promise&lt;FetchMessageObject|false|undefined&gt; - `false` if the message was not found, `undefined` if no mailbox is selected
 
 **Example:**
 
@@ -522,41 +545,48 @@ if (message) {
 
 ### download(range, part, options)
 
-Downloads a message or specific body part as a stream.
+Downloads a full RFC 822 message or a specific body part as a stream. Body parts are decoded, so the stream yields the binary file, and text content is converted to UTF-8.
 
 **Parameters:**
 
-- `range` (String|Number) - Message sequence number or UID
+- `range` (String|Number) - Message sequence number or UID, or '*' for the last message
 - `part` (String) - Body part identifier (optional, omit for full message)
 - `options` (Object) - Download options
   - `uid` (Boolean) - Range is a UID
   - `maxBytes` (Number) - Maximum bytes to download
   - `chunkSize` (Number) - Chunk size (default: 65536)
+  - `binary` (Boolean) - Request the content with FETCH BINARY when the server supports it (BINARY or IMAP4rev2), so the server removes the transfer encoding
 
-**Returns:** Promise&lt;DownloadObject&gt;
+**Returns:** Promise&lt;DownloadObject&gt;. Resolves with an empty object (no `meta` or `content`) when no mailbox is selected or the message or part was not found, so check `content` before using it.
 
 - `meta` (Object) - Content metadata
-  - `expectedSize` (Number) - Expected size
+  - `expectedSize` (Number) - Size of the whole message (RFC822.SIZE), not of the requested part
   - `contentType` (String) - Content-Type
   - `charset` (String) - Character set
-  - `disposition` (String) - Content-Disposition
+  - `disposition` (String|false) - Content-Disposition
   - `filename` (String) - Filename
   - `encoding` (String) - Transfer encoding
-- `content` (ReadableStream) - Streamed content
+  - `flowed` (Boolean) - Content uses format=flowed
+  - `delSp` (Boolean) - Flowed text uses delsp=yes
+- `content` (Readable) - Streamed content
 
 **Example:**
 
 ```js
-let { meta, content } = await client.download(12345, '2', { uid: true });
-console.log('Downloading:', meta.filename);
-
 const fs = require('fs');
-content.pipe(fs.createWriteStream(meta.filename));
+const { pipeline } = require('stream/promises');
+
+let { meta, content } = await client.download(12345, '2', { uid: true });
+if (content) {
+    console.log('Downloading:', meta.filename);
+    // pipeline() rejects when the download fails, a plain .pipe() would not report it
+    await pipeline(content, fs.createWriteStream(meta.filename || 'attachment.bin'));
+}
 ```
 
 ### downloadMany(range, parts, options)
 
-Downloads multiple body parts as Buffers.
+Downloads multiple body parts of one message as Buffers, in a single FETCH.
 
 **Parameters:**
 
@@ -564,8 +594,10 @@ Downloads multiple body parts as Buffers.
 - `parts` (Array) - Array of part identifiers
 - `options` (Object) - Download options
   - `uid` (Boolean) - Range is a UID
+  - `maxBytes` (Number) - Maximum bytes to download per part
+  - `binary` (Boolean) - Request the parts with FETCH BINARY when the server supports it
 
-**Returns:** Promise&lt;Object&gt; - Object with part IDs as keys
+**Returns:** Promise&lt;Object&gt; - Object with part IDs as keys. Each value has `meta` (same fields as in `download()`) and `content` (Buffer, or `null` if the part had no content)
 
 **Example:**
 
@@ -585,13 +617,13 @@ Searches for messages in the currently selected mailbox.
 **Parameters:**
 
 - `query` (SearchObject) - Search criteria
-  - `seq` (String) - Sequence range
-  - `uid` (String) - UID range
-  - `answered` (Boolean) - Has \Answered flag
-  - `deleted` (Boolean) - Has \Deleted flag
-  - `draft` (Boolean) - Has \Draft flag
-  - `flagged` (Boolean) - Has \Flagged flag
-  - `seen` (Boolean) - Has \Seen flag
+  - `seq` (String|Number) - Sequence range
+  - `uid` (String|Number) - UID range
+  - `answered` (Boolean) - Has (`true`) or does not have (`false`) the \Answered flag
+  - `deleted` (Boolean) - Has or does not have the \Deleted flag
+  - `draft` (Boolean) - Has or does not have the \Draft flag
+  - `flagged` (Boolean) - Has or does not have the \Flagged flag
+  - `seen` (Boolean) - Has or does not have the \Seen flag
   - `all` (Boolean) - All messages
   - `new` (Boolean) - Recent but unseen (not available on IMAP4rev2 sessions)
   - `old` (Boolean) - Not recent (not available on IMAP4rev2 sessions)
@@ -602,6 +634,7 @@ Searches for messages in the currently selected mailbox.
   - `bcc` (String) - Bcc address contains
   - `subject` (String) - Subject contains
   - `body` (String) - Body contains
+  - `text` (String) - Headers or body contain
   - `larger` (Number) - Size larger than bytes
   - `smaller` (Number) - Size smaller than bytes
   - `before` (Date|String) - Internal date before
@@ -612,19 +645,22 @@ Searches for messages in the currently selected mailbox.
   - `sentSince` (Date|String) - Sent date since
   - `keyword` (String) - Has custom keyword
   - `unKeyword` (String) - Does not have keyword
-  - `header` (Object) - Header field matches
-  - `modseq` (BigInt) - Modified since modseq
-  - `emailId` (String) - Email ID (OBJECTID extension)
-  - `threadId` (String) - Thread ID (OBJECTID extension)
-  - `or` (Array) - OR of search criteria
+  - `header` (Object) - Header matches: `{ 'X-Mailer': 'Foo' }` for a partial value match, `true` to match messages that have the header
+  - `modseq` (BigInt|Number) - Modseq higher than value (CONDSTORE)
+  - `emailId` (String) - Email ID (OBJECTID or `X-GM-EXT-1`)
+  - `threadId` (String) - Thread ID (OBJECTID or `X-GM-EXT-1`)
+  - `or` (Array) - Array of 2 or more SearchObjects, at least one must match
   - `not` (SearchObject) - Negation
   - `gmraw` (String) - Gmail raw search query
   - `gmailraw` (String) - Alias for gmraw
+  - `labels` (Object) - Gmail label filter, compiled into an `X-GM-RAW` query: `{ has: ['Work'], not: ['Spam'] }`. `has` matches messages carrying all listed labels, `not` excludes messages carrying any of them
 - `options` (Object) - Search options
   - `uid` (Boolean) - Return UIDs instead of sequence numbers
   - `returnOptions` (Array) - Request ESEARCH ([RFC 4731](https://www.rfc-editor.org/rfc/rfc4731.html)) result. Each entry is one of `'MIN'`, `'MAX'`, `'COUNT'`, `'ALL'`, or `{ partial: '1:100' }` ([RFC 9394](https://www.rfc-editor.org/rfc/rfc9394.html)). When provided, returns an `ESearchResult` instead of a plain array (the client falls back to deriving `min`/`max`/`count`/`all` if the server lacks ESEARCH).
 
-**Returns:** Promise&lt;Number[] | ESearchResult | false&gt;
+**Returns:** Promise&lt;Number[] | ESearchResult | false | undefined&gt; - `undefined` if no mailbox is selected
+
+`ESearchResult` has the fields `count`, `min`, `max`, `all` (compact sequence-set string such as `"1,5:10,20"`), `partial` (`{ range, messages }`) and `modseq`, each present only when requested or reported.
 
 :::note IMAP4rev2 and the \Recent flag
 [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) removed the `\Recent` flag together with the `NEW`, `OLD`, and `RECENT` search keys. When the session runs in IMAP4rev2 mode (which ImapFlow enables automatically on supporting servers), searching with `new`, `old`, or `recent` rejects with an error whose `code` is `MissingServerExtension`. Set `disableIMAP4rev2: true` in the constructor options if you need these keys against a server that still supports IMAP4rev1.
@@ -663,7 +699,7 @@ console.log(result.count, result.max);
 
 ### messageDelete(range, options)
 
-Deletes messages by marking them as deleted and expunging.
+Deletes messages by marking them as deleted and expunging. The result does not say which messages were deleted, listen to the `expunge` event for that.
 
 **Parameters:**
 
@@ -690,11 +726,12 @@ Copies messages to another mailbox.
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
 
-**Returns:** Promise&lt;CopyResponseObject&gt;
+**Returns:** Promise&lt;CopyResponseObject|false&gt;
 
-- `path` (String) - Destination path
-- `uidValidity` (BigInt) - Destination UIDVALIDITY
-- `uidMap` (Map) - Mapping of source UIDs to destination UIDs
+- `path` (String) - Source mailbox path
+- `destination` (String) - Destination mailbox path
+- `uidValidity` (BigInt) - Destination UIDVALIDITY (if UIDPLUS, [RFC 4315](https://www.rfc-editor.org/rfc/rfc4315.html))
+- `uidMap` (Map) - Mapping of source UIDs to destination UIDs (if UIDPLUS)
 
 **Example:**
 
@@ -705,7 +742,7 @@ console.log('Copied to UIDs:', result.uidMap);
 
 ### messageMove(range, destination, options)
 
-Moves messages to another mailbox.
+Moves messages to another mailbox. Uses MOVE ([RFC 6851](https://www.rfc-editor.org/rfc/rfc6851.html)) when available, otherwise falls back to COPY, flagging as \Deleted and EXPUNGE.
 
 **Parameters:**
 
@@ -714,7 +751,7 @@ Moves messages to another mailbox.
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
 
-**Returns:** Promise&lt;CopyResponseObject|Boolean&gt;
+**Returns:** Promise&lt;CopyResponseObject|false&gt; - same shape as `messageCopy()`
 
 **Example:**
 
@@ -732,7 +769,7 @@ Adds flags to messages.
 - `flags` (String[]) - Flags to add (e.g., `['\\Seen', '\\Flagged', 'custom']`)
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `unchangedSince` (BigInt|Number) - Only update messages whose modseq is lower or equal (CONDSTORE)
   - `useLabels` (Boolean) - If `true`, modify Gmail labels instead of flags (requires `X-GM-EXT-1`)
   - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
@@ -754,7 +791,7 @@ Removes flags from messages.
 - `flags` (String[]) - Flags to remove
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `unchangedSince` (BigInt|Number) - Only update messages whose modseq is lower or equal (CONDSTORE)
   - `useLabels` (Boolean) - If `true`, remove Gmail labels instead of flags
   - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
@@ -773,10 +810,10 @@ Sets exact flags for messages, replacing existing flags.
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range or search
-- `flags` (String[]) - Flags to set
+- `flags` (String[]) - Flags to set. Flags the mailbox does not permit are ignored. An empty array clears every flag, but a non-empty array with nothing usable in it is refused rather than clearing the message
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only if modseq has not changed since (CONDSTORE)
+  - `unchangedSince` (BigInt|Number) - Only update messages whose modseq is lower or equal (CONDSTORE)
   - `useLabels` (Boolean) - If `true`, replace Gmail labels instead of flags
   - `silent` (Boolean) - If `true`, do not emit a `flags` event for this update
 
@@ -790,15 +827,15 @@ await client.messageFlagsSet('12345', ['\\Seen', '\\Flagged'], { uid: true });
 
 ### setFlagColor(range, color, options)
 
-Sets the flag color for messages using special color flags.
+Sets a colored flag on messages, using the `\Flagged` flag plus the `$MailFlagBit0` to `$MailFlagBit2` keywords that clients like Apple Mail read.
 
 **Parameters:**
 
 - `range` (String|Array|SearchObject) - Message range
-- `color` (String) - Color name: `'red'`, `'orange'`, `'yellow'`, `'green'`, `'blue'`, `'purple'`, `'grey'`, or a falsy value to remove the color
+- `color` (String) - Color name (case-insensitive): `'red'`, `'orange'`, `'yellow'`, `'green'`, `'blue'`, `'purple'`, `'grey'`, or a falsy value to remove the flag and color. An unknown name resolves to `false` without changes
 - `options` (Object) - Options
   - `uid` (Boolean) - Range contains UIDs
-  - `unchangedSince` (BigInt) - Only update if modseq has not changed since this value (CONDSTORE)
+  - `unchangedSince` (BigInt|Number) - Only update messages whose modseq is lower or equal (CONDSTORE)
 
 **Returns:** Promise&lt;Boolean&gt;
 
@@ -834,16 +871,16 @@ Appends a message to a mailbox.
 **Parameters:**
 
 - `path` (String|Array) - Destination mailbox
-- `content` (String|Buffer|Readable) - Message content (RFC822 format)
-- `flags` (Array) - Optional flags
-- `idate` (Date) - Optional internal date
+- `content` (String|Buffer|Uint8Array) - Message content (RFC 822 format)
+- `flags` (Array) - Optional flags. Flags the destination does not accept are dropped with a warning logged
+- `idate` (Date|String) - Optional internal date
 
 **Returns:** Promise&lt;AppendResponseObject | false&gt;
 
-- `path` (String) - Mailbox path
+- `destination` (String) - Full path of the mailbox the message was uploaded to
 - `uid` (Number) - UID of appended message (if UIDPLUS extension)
-- `uidValidity` (BigInt) - Mailbox UIDVALIDITY
-- `seq` (Number) - Sequence number
+- `uidValidity` (BigInt) - Mailbox UIDVALIDITY (if UIDPLUS extension)
+- `seq` (Number) - Sequence number, if the destination is the currently selected mailbox
 
 **Example:**
 
@@ -865,7 +902,7 @@ console.log('Appended as UID:', result.uid);
 
 ### Event: 'error'
 
-Emitted when an error occurs.
+Emitted when an error occurs. In most cases an error event also means that the connection is closed and pending operations reject.
 
 ```js
 client.on('error', (err) => {
@@ -876,7 +913,7 @@ client.on('error', (err) => {
 
 ### Event: 'close'
 
-Emitted when connection is closed. ImapFlow does not auto-reconnect.
+Emitted when connection is closed. ImapFlow does not auto-reconnect, create a new client instance to connect again.
 
 ```js
 client.on('close', () => {
@@ -899,7 +936,7 @@ client.on('mailboxOpen', (mailbox) => {
 
 ### Event: 'mailboxClose'
 
-Emitted when a mailbox is closed.
+Emitted when a selected mailbox is closed, either explicitly (by `mailboxClose()` or by selecting a different mailbox) or because the connection went away while the mailbox was still selected. In the latter case it fires before the `close` event.
 
 ```js
 client.on('mailboxClose', (mailbox) => {
@@ -921,20 +958,22 @@ client.on('exists', (data) => {
 
 ### Event: 'expunge'
 
-Emitted when a message is deleted from the currently open mailbox.
+Emitted once for every message deleted from the currently open mailbox. Not emitted when the `expungeHandler` option is set, the handler receives the same payload instead.
 
 ```js
 client.on('expunge', (data) => {
     console.log('Path:', data.path);
     console.log('Sequence:', data.seq);
-    // If QRESYNC enabled:
+    // If QRESYNC enabled or the server sent VANISHED:
     console.log('UID:', data.uid);
+    console.log('Vanished:', data.vanished); // true for a VANISHED response
+    console.log('Earlier:', data.earlier); // true for VANISHED (EARLIER)
 });
 ```
 
 ### Event: 'flags'
 
-Emitted when message flags change in the currently open mailbox.
+Emitted when message flags change in the currently open mailbox. Not all servers report flag changes. The payload also has `flagColor` if the message is flagged with a color.
 
 ```js
 client.on('flags', (data) => {
@@ -948,7 +987,7 @@ client.on('flags', (data) => {
 
 ### Event: 'response'
 
-Emitted when a tagged response is received from the server.
+Emitted when a tagged response is received from the server. `response` is the status (`OK`, `NO` or `BAD`) and `code` the response code, if any.
 
 ```js
 client.on('response', (response) => {
@@ -961,7 +1000,7 @@ client.on('response', (response) => {
 
 ### Event: 'log'
 
-Emitted when `emitLogs: true`. Contains log entries.
+Emitted when `emitLogs: true`. Each entry has `level`, `t` (timestamp), `cid` (connection ID), `lo` (log order number) and the logged fields such as `msg`.
 
 ```js
 client.on('log', (entry) => {
@@ -969,13 +1008,35 @@ client.on('log', (entry) => {
 });
 ```
 
+### Event: 'alert'
+
+Emitted when the server sends a response with the ALERT response code ([RFC 9051 section 7.1](https://www.rfc-editor.org/rfc/rfc9051.html#section-7.1)), text meant to be shown to the user, such as a planned shutdown or an account problem. `response` is the status that carried it (`OK`, `NO`, `BAD`, `BYE` or `PREAUTH`) and `tag` the command tag, missing for untagged responses.
+
+```js
+client.on('alert', (alert) => {
+    console.log(`Server alert (${alert.response}): ${alert.message}`);
+});
+```
+
+## Automatic Cleanup
+
+On runtimes that define `Symbol.asyncDispose` (Node.js 20.4 and newer), the client can be declared with `await using`. When the scope ends, the client logs out and closes the connection, even if the scope exits with a throw. Disposal never throws.
+
+```js title="await using"
+{
+    await using client = new ImapFlow({ host: 'imap.example.com', port: 993, secure: true, auth });
+    await client.connect();
+    // ...
+} // client.logout() runs here
+```
+
 ## Properties
 
 ### mailbox
 
-Currently selected mailbox information.
+Currently selected mailbox information, or `false` if no mailbox is open.
 
-**Type:** MailboxObject | null
+**Type:** [MailboxObject](#mailboxobject) | false
 
 ```js
 let lock = await client.getMailboxLock('INBOX');
@@ -995,9 +1056,9 @@ try {
 
 ### authenticated
 
-The authenticated username, or `false` if not authenticated. If the session was pre-authenticated by the server (PREAUTH greeting, no credentials used), the value is `true`.
+`true` once the connection is authenticated (by LOGIN, AUTHENTICATE or a PREAUTH greeting), `false` before that. The user name is in `options.auth.user`.
 
-**Type:** string | boolean
+**Type:** boolean
 
 ### secureConnection
 
@@ -1013,13 +1074,13 @@ Whether the connection is usable (connected and authenticated).
 
 ### capabilities
 
-Map of server capabilities reported by the server. Keys are capability names, values are typically `true` or, for capabilities like `APPENDLIMIT`, a numeric value.
+Map of capabilities reported by the server. Keys are capability names, values are `true` for toggleable capabilities (e.g. `UIDPLUS`) or a number for capabilities with a value (e.g. `APPENDLIMIT`).
 
 **Type:** Map&lt;string, boolean | number&gt;
 
 ### enabled
 
-Set of IMAP extensions that have been activated for this connection (via the `ENABLE` command). For example, the set contains `IMAP4REV2` when the session runs in IMAP4rev2 mode.
+Set of IMAP extensions that have been activated for this connection (via the `ENABLE` command, [RFC 5161](https://www.rfc-editor.org/rfc/rfc5161.html)), usually `CONDSTORE` and `UTF8=ACCEPT` if the server supports them. The set contains `IMAP4REV2` when the session runs in IMAP4rev2 mode.
 
 **Type:** Set&lt;string&gt;
 
@@ -1035,15 +1096,27 @@ Port number the client is connecting to.
 
 **Type:** Number
 
+### servername
+
+Server name used for SNI, or `false` when connecting to an IP literal.
+
+**Type:** String | false
+
 ### serverInfo
 
-Server identification (from ID extension).
+Server identification from the ID command ([RFC 2971](https://www.rfc-editor.org/rfc/rfc2971.html)). Available after a successful `connect()`, `null` if the server provided none.
 
 **Type:** Object | null
 
+### clientInfo
+
+Client identification sent with the ID command.
+
+**Type:** Object
+
 ### id
 
-Connection instance ID.
+Connection instance ID, used in logs.
 
 **Type:** String
 
@@ -1052,6 +1125,78 @@ Connection instance ID.
 Whether currently in IDLE mode.
 
 **Type:** Boolean
+
+### state
+
+Current connection state, one of the values in `states`.
+
+**Type:** Number
+
+### states
+
+Connection state constants: `NOT_AUTHENTICATED` (1), `AUTHENTICATED` (2), `SELECTED` (3) and `LOGOUT` (4).
+
+**Type:** Object
+
+```js
+if (client.state === client.states.SELECTED) {
+    console.log('A mailbox is selected');
+}
+```
+
+### isClosed
+
+`true` once `close()` has run.
+
+**Type:** Boolean
+
+### greeting
+
+Human readable text of the server greeting.
+
+**Type:** String | undefined
+
+### byeReason
+
+Reason text of the server's BYE response, if the server closed the session.
+
+**Type:** String | undefined
+
+### tls
+
+Negotiated TLS session details (`name`, `standardName`, `version` from `tls.TLSSocket#getCipher()` plus `authorized`), or `false` for a cleartext connection.
+
+**Type:** Object | false | undefined
+
+### namespace
+
+The personal namespace from the NAMESPACE command ([RFC 2342](https://www.rfc-editor.org/rfc/rfc2342.html)): `{ prefix, delimiter }`.
+
+**Type:** Object | undefined
+
+### namespaces
+
+Every namespace the server reported, grouped as `personal`, `other` and `shared`. `other` and `shared` are `false` when the server reported none.
+
+**Type:** Object | undefined
+
+### options
+
+The options the client was created with.
+
+**Type:** ImapFlowOptions
+
+### log
+
+The connection logger. Every level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) is callable regardless of what the configured logger supports.
+
+**Type:** Object
+
+### ImapFlow.version
+
+Static property with the ImapFlow module version.
+
+**Type:** String
 
 ## Type Definitions
 
@@ -1063,6 +1208,20 @@ import { AuthenticationFailure } from 'imapflow';
 ```
 
 Errors the client rejects with are plain `Error` objects that carry extra properties describing the failure, typed as `ImapFlowError`: `code` (for example `NoConnection`, `ETIMEOUT` or `LockTimeout`), `responseStatus` (`NO` or `BAD`), `responseText`, `serverResponseCode` (for example `AUTHENTICATIONFAILED`), `command` and `path`. A failed login rejects with an `AuthenticationFailure` instance, an `Error` subclass with `authenticationFailed` set to `true` and the server's response text in `response`.
+
+The package also exports `ImapFlowErrorCode`, an object of every `code` value the library sets, so codes can be matched without string literals. Parser failures use `ParserError` followed by a number and are not listed individually. Errors from the socket, TLS or DNS layer keep Node's own code (`ECONNREFUSED`, `ENOTFOUND` and so on).
+
+```js title="Matching error codes"
+const { ImapFlow, ImapFlowErrorCode } = require('imapflow');
+
+try {
+    await client.getMailboxLock('INBOX', { acquireTimeout: 5000 });
+} catch (err) {
+    if (err.code === ImapFlowErrorCode.LockTimeout) {
+        console.log('Mailbox lock was not granted in time');
+    }
+}
+```
 
 ### FetchMessageObject
 
@@ -1079,11 +1238,12 @@ Errors the client rejects with are plain `Error` objects that carry extra proper
 | flagColor | String | Flag color |
 | envelope | Object | Envelope data |
 | bodyStructure | Object | MIME structure |
-| internalDate | Date | Internal date |
+| internalDate | Date\|String | Internal date |
 | source | Buffer | Raw message |
 | headers | Buffer | Raw headers |
-| bodyParts | Map | Body parts |
+| bodyParts | Map | Body parts, keyed by the requested part identifier |
 | binaryParts | Set | Part identifiers from `bodyParts` that arrived via FETCH BINARY, i.e. with the content-transfer-encoding already decoded by the server |
+| id | String | Account-unique ID for this email, the email ID or a hash of path, UIDVALIDITY and UID (see `idHashAlgorithm`) |
 
 ### MailboxObject
 
@@ -1093,13 +1253,35 @@ Errors the client rejects with are plain `Error` objects that carry extra proper
 | delimiter | String | Path delimiter |
 | flags | Set | Mailbox flags |
 | specialUse | String | Special-use flag |
-| permanentFlags | Set | Allowed flags |
+| listed | Boolean | Mailbox was found in the LIST output |
+| subscribed | Boolean | Mailbox is subscribed |
+| permanentFlags | Set | Allowed flags. If missing or it includes `\*`, any flag can be used |
 | mailboxId | String | Mailbox ID (OBJECTID) |
-| highestModseq | BigInt | Highest modseq |
+| highestModseq | BigInt | Highest modseq (CONDSTORE) |
+| noModseq | Boolean | Server does not store mod-sequences for this mailbox |
 | uidValidity | BigInt | UIDVALIDITY |
 | uidNext | Number | Next UID |
 | exists | Number | Message count |
+| unseen | Number | Sequence number of the first unseen message, if the server reported `[UNSEEN]`. Not a count, use `status()` for that |
+| appendlimit | Number | Largest message size the server accepts for APPEND into this mailbox ([RFC 7889](https://www.rfc-editor.org/rfc/rfc7889.html)) |
 | readOnly | Boolean | Read-only mode |
+
+### ListResponse
+
+| Property | Type | Description |
+|----------|------|-------------|
+| path | String | Mailbox path (unicode) |
+| pathAsListed | String | Mailbox path as listed in the LIST/LSUB response |
+| name | String | Last part of the path |
+| delimiter | String | Path delimiter |
+| parent | String[] | Parent folder names |
+| parentPath | String | Parent path as a string |
+| flags | Set | Mailbox flags |
+| specialUse | String | Special-use flag ([RFC 6154](https://www.rfc-editor.org/rfc/rfc6154.html)), if any |
+| specialUseSource | String | How `specialUse` was determined: `user` (from `specialUseHints`), `extension` (reported by the server) or `name` (matched against known folder names) |
+| listed | Boolean | Mailbox was found in the LIST output |
+| subscribed | Boolean | Mailbox is subscribed. Servers that report no subscription state treat every mailbox as subscribed |
+| status | StatusObject | Status values, if `statusQuery` was used |
 
 ### QuotaResponse
 

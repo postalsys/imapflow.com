@@ -141,8 +141,13 @@ async function fetchMessagesWithAttachments() {
 
     let lock = await client.getMailboxLock('INBOX');
     try {
-        // Fetch last 50 messages using fetchAll
-        let messages = await client.fetchAll('*:-50', {
+        let total = client.mailbox.exists;
+        if (total === 0) {
+            return;
+        }
+
+        // Fetch the last 50 messages (sequence numbers run from 1 to total)
+        let messages = await client.fetchAll(`${Math.max(1, total - 49)}:*`, {
             envelope: true,
             bodyStructure: true
         });
@@ -169,8 +174,8 @@ async function fetchMessagesWithAttachments() {
     await client.logout();
 }
 
-// Note: ImapFlow stores Content-Type as a single string like "text/plain"
-// or "multipart/mixed" in node.type — there is no separate `subtype` field.
+// ImapFlow stores Content-Type as a single string like "text/plain"
+// or "multipart/mixed" in node.type, there is no separate `subtype` field.
 function findAttachments(node) {
     let attachments = [];
     let topType = (node.type || '').split('/')[0];
@@ -221,11 +226,17 @@ async function downloadAttachment(messageUid, attachmentPart, savePath) {
             { uid: true }
         );
 
+        if (!content) {
+            console.log('Message or part not found');
+            return;
+        }
+
         console.log('Downloading:', meta.filename || 'attachment');
         console.log('Content-Type:', meta.contentType);
-        console.log('Expected size:', meta.expectedSize, 'bytes');
+        // expectedSize is the size of the whole message, an upper bound for the part
+        console.log('Message size:', meta.expectedSize, 'bytes');
 
-        // Stream to file
+        // Stream to file, pipeline() rejects if the download fails
         await pipeline(content, fs.createWriteStream(savePath));
 
         console.log(`Saved to ${savePath}`);
@@ -243,7 +254,12 @@ downloadAttachment('123', '2', './attachment.pdf')
 
 ## Download Multiple Attachments
 
+`downloadMany()` loads every part into memory at once, so it suits messages with small attachments. Use `download()` per part for large files.
+
 ```js title="Download all attachments from a message"
+const fs = require('fs');
+const path = require('path');
+
 async function downloadAllAttachments(messageUid, outputDir) {
     await client.connect();
 
@@ -276,11 +292,16 @@ async function downloadAllAttachments(messageUid, outputDir) {
             { uid: true }
         );
 
+        await fs.promises.mkdir(outputDir, { recursive: true });
+
         // Save each attachment
         for (let attachment of attachments) {
             let data = parts[attachment.part];
             if (data && data.content) {
-                let filename = path.join(outputDir, attachment.filename);
+                // The filename comes from the sender: path.basename() drops any
+                // directory parts, and the part number keeps names unique
+                let safeName = path.basename(attachment.filename.replace(/\\/g, '/')) || 'attachment';
+                let filename = path.join(outputDir, `${attachment.part}-${safeName}`);
                 await fs.promises.writeFile(filename, data.content);
                 console.log(`Saved: ${filename}`);
             }
@@ -297,6 +318,8 @@ downloadAllAttachments('456', './attachments/')
 ```
 
 ## Fetch Message Body Content
+
+This example downloads the text and HTML parts directly. `download()` decodes the transfer encoding and converts text to UTF-8. To get the body, addresses and attachments in one go, parse the full source instead, see [Parsing Messages](./parsing-messages.md).
 
 ```js title="Extract text and HTML content"
 async function getMessageContent(messageUid) {
@@ -342,6 +365,7 @@ async function getMessageContent(messageUid) {
         return result;
     } finally {
         lock.release();
+        await client.logout();
     }
 }
 
@@ -393,8 +417,9 @@ async function fetchByDateRange(startDate, endDate) {
         }, { uid: true });
 
         for (let message of messages) {
+            let date = message.envelope.date;
             console.log(
-                message.envelope.date?.toISOString() || 'No date',
+                date instanceof Date ? date.toISOString() : date || 'No date',
                 '-',
                 message.envelope.subject
             );
@@ -515,16 +540,19 @@ async function watchAndFetch() {
         console.log(`Watching INBOX (${lastCount} messages)...`);
 
         client.on('exists', async (data) => {
-            // We already hold the lock, so we can fetch directly
-            if (data.count > lastCount) {
-                let newMessages = await client.fetchAll(
-                    `${lastCount + 1}:*`,
-                    { envelope: true }
-                );
-                for (let msg of newMessages) {
-                    console.log(`New: ${msg.envelope.subject}`);
+            // We already hold the lock, so we can fetch directly.
+            // The handler is not awaited, so errors must be caught here.
+            try {
+                if (data.count > lastCount) {
+                    let range = `${lastCount + 1}:*`;
+                    lastCount = data.count;
+                    let newMessages = await client.fetchAll(range, { envelope: true });
+                    for (let msg of newMessages) {
+                        console.log(`New: ${msg.envelope.subject}`);
+                    }
                 }
-                lastCount = data.count;
+            } catch (err) {
+                console.error('Failed to fetch new messages:', err);
             }
         });
 
@@ -616,7 +644,7 @@ async function gmailLabelsExample() {
             console.log('Labels:', message.labels ? Array.from(message.labels) : 'none');
         }
 
-        // Add a Gmail label — labels are managed via the regular flag methods
+        // Add a Gmail label. Labels are managed via the regular flag methods
         // by passing `useLabels: true` in the options.
         await client.messageFlagsAdd('12345', ['MyLabel'], { uid: true, useLabels: true });
 
@@ -717,15 +745,21 @@ class SimpleEmailClient {
     }
 
     async moveToTrash(mailbox, uids) {
+        // Find the Trash folder by its special-use flag, the name differs between servers.
+        // Resolved once and cached, LIST can be slow on accounts with many folders
+        if (!this.trashPath) {
+            let mailboxes = await this.client.list({ listOnly: true });
+            let trash = mailboxes.find(box => box.specialUse === '\\Trash');
+            this.trashPath = trash ? trash.path : 'Trash';
+        }
+        let trashPath = this.trashPath;
+
         let lock = await this.client.getMailboxLock(mailbox);
         try {
-            // Try standard trash locations
-            let trashPath = '[Gmail]/Trash'; // Gmail
-            try {
-                await this.client.messageMove(uids, trashPath, { uid: true });
-            } catch {
-                // Try other common names
-                await this.client.messageMove(uids, 'Trash', { uid: true });
+            // messageMove() resolves with false instead of throwing when the move fails
+            let result = await this.client.messageMove(uids, trashPath, { uid: true });
+            if (!result) {
+                throw new Error(`Failed to move messages to ${trashPath}`);
             }
         } finally {
             lock.release();
@@ -772,5 +806,6 @@ main().catch(console.error);
 ## See Also
 
 - [Fetching Messages Guide](../guides/fetching-messages.md)
+- [Parsing Messages Examples](./parsing-messages.md)
 - [API Reference](../api/imapflow-client.md)
 - [Mailbox Management Guide](../guides/mailbox-management.md)

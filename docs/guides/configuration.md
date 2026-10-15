@@ -28,9 +28,9 @@ const client = new ImapFlow({
 
 ## Connection Options
 
-### host (required)
+### host
 
-The IMAP server hostname.
+The IMAP server hostname or IP address. Defaults to `localhost`, so in practice you always set it.
 
 ```js
 {
@@ -50,7 +50,7 @@ The port to connect to. Defaults to `993` (IMAPS) when `secure` is `true`, and t
 
 ### secure
 
-Whether to use TLS for the connection. If `true`, establishes the connection directly over TLS. If `false`, a plain connection is used first and, if possible, upgraded to TLS via STARTTLS.
+Whether to use TLS for the connection. If `true`, establishes the connection directly over TLS (implicit TLS, usually port 993). If `false`, a plain connection is used first and upgraded to TLS with STARTTLS when the server offers it, see [doSTARTTLS](#dostarttls) for the exact policy. When `secure` is not set, it defaults to `true` for port 993 and `false` for any other port.
 
 ```js
 {
@@ -60,11 +60,13 @@ Whether to use TLS for the connection. If `true`, establishes the connection dir
 
 ### doSTARTTLS
 
-Controls STARTTLS behavior explicitly:
+Controls STARTTLS behavior for a connection that was not opened with `secure: true`:
 
-- `true` - Start unencrypted and upgrade to TLS using STARTTLS before authentication. Fails if STARTTLS is not supported.
-- `false` - Never use STARTTLS, even if the server supports it. Results in fully unencrypted connection when combined with `secure: false`.
-- `undefined` (default) - Attempt STARTTLS if available when `secure: false`.
+- `true` - Start unencrypted and upgrade to TLS using STARTTLS before authentication. `connect()` fails if the server does not offer STARTTLS.
+- `false` - Never use STARTTLS, even if the server supports it. The whole session, credentials included, stays in cleartext.
+- `undefined` (default) - Upgrade with STARTTLS when the server offers it, otherwise continue in cleartext and log a warning.
+
+The default is opportunistic. The capability list that announces STARTTLS is itself received in cleartext, so an attacker on the network path can strip it and keep the connection unencrypted. Set `doSTARTTLS: true` whenever credentials must never cross the wire unencrypted.
 
 ```js
 {
@@ -73,11 +75,11 @@ Controls STARTTLS behavior explicitly:
 }
 ```
 
-**Note:** Setting both `secure: true` and `doSTARTTLS: true` is invalid and will throw an error.
+**Note:** Setting both `secure: true` and `doSTARTTLS: true` is a misconfiguration, and `connect()` rejects with an error.
 
 ### servername
 
-Optional servername for SNI (Server Name Indication). Useful when connecting via IP address.
+Servername for SNI (Server Name Indication) and certificate validation. Defaults to `host` when `host` is a hostname. When `host` is an IP address no SNI name is sent unless you set `servername`.
 
 ```js
 {
@@ -101,9 +103,11 @@ Username and password authentication:
 }
 ```
 
+When the server advertises `AUTH=PLAIN` or `AUTH=LOGIN`, ImapFlow authenticates with SASL PLAIN (preferred) or SASL LOGIN. Otherwise it uses the IMAP `LOGIN` command. If the server advertises `LOGINDISABLED` and no SASL mechanism, `connect()` rejects with an `AuthenticationFailure`.
+
 ### OAuth2 Authentication
 
-For services that support OAuth2 (Gmail, Outlook, etc.):
+For services that support OAuth2 (Gmail, Microsoft 365, etc.), pass an access token instead of a password:
 
 ```js
 {
@@ -114,13 +118,15 @@ For services that support OAuth2 (Gmail, Outlook, etc.):
 }
 ```
 
+ImapFlow authenticates with [OAUTHBEARER (RFC 7628)](https://www.rfc-editor.org/rfc/rfc7628.html) when the server advertises it, and with XOAUTH2 otherwise. When `accessToken` is set, `pass` is ignored. If the server advertises neither mechanism, authentication fails.
+
 :::tip
 ImapFlow expects you to supply a valid access token and does not refresh tokens itself. Obtaining that token, registering the OAuth2 application, running the consent flow, and renewing tokens before they expire, is usually the hardest part of a mailbox integration. If you would rather not build it, [**EmailEngine**](https://emailengine.app/?utm_source=imapflow.com&utm_medium=inline&utm_campaign=oss-docs&utm_content=configuration) manages OAuth2 apps and token refresh for Gmail and Microsoft 365, and runs ImapFlow under the hood.
 :::
 
 ### Custom Authentication Method
 
-Specify a custom authentication method:
+Force a specific authentication method instead of the automatic selection:
 
 ```js
 {
@@ -132,6 +138,12 @@ Specify a custom authentication method:
 }
 ```
 
+- `AUTH=PLAIN` - SASL PLAIN ([RFC 4616](https://www.rfc-editor.org/rfc/rfc4616.html))
+- `AUTH=LOGIN` - SASL LOGIN, a two-step challenge and response
+- `LOGIN` - the plain IMAP `LOGIN` command
+
+When `loginMethod` is not set and the username contains a `\` or a `/` (for example `DOMAIN\user` or `user@example.com/shared@example.com` on Microsoft Exchange), the `LOGIN` command is used automatically.
+
 ### Admin Impersonation (SASL PLAIN with authzid)
 
 For admin access to user mailboxes (Zimbra, Dovecot, etc.):
@@ -142,18 +154,18 @@ For admin access to user mailboxes (Zimbra, Dovecot, etc.):
         user: 'admin@example.com',      // Admin credentials
         pass: 'adminpassword',
         authzid: 'user@example.com',    // User to impersonate
-        loginMethod: 'AUTH=PLAIN'       // Required for authzid
+        loginMethod: 'AUTH=PLAIN'       // Makes sure SASL PLAIN is used
     }
 }
 ```
 
-**Note:** The `authzid` parameter only works with the `AUTH=PLAIN` mechanism. The server must support admin delegation/impersonation.
+**Note:** The `authzid` parameter is only sent with the `AUTH=PLAIN` mechanism and is silently ignored by the other methods. Set `loginMethod: 'AUTH=PLAIN'` so a fallback to `AUTH=LOGIN` or `LOGIN` can not drop it. The server must support admin delegation/impersonation.
 
 ## TLS Options
 
 ### tls
 
-Additional TLS options (passed to Node.js TLS module):
+Additional TLS options, passed to Node.js [`tls.connect()`](https://nodejs.org/api/tls.html#tlsconnectoptions-callback) both for implicit TLS and for the STARTTLS upgrade. ImapFlow adds no TLS defaults of its own, so Node.js defaults apply to everything you do not set:
 
 ```js
 {
@@ -179,7 +191,7 @@ Additional TLS options (passed to Node.js TLS module):
 
 ## Proxy Configuration
 
-ImapFlow supports both SOCKS and HTTP CONNECT proxies.
+Set `proxy` to a proxy URL to tunnel the connection. Supported schemes are `http:` and `https:` (HTTP CONNECT) and `socks:`, `socks4:`, `socks4a:` and `socks5:`. Credentials in the URL are used for proxy authentication. IPv6 proxy endpoints use the bracketed URL form, for example `socks5://[2001:db8::1]:1080`. Proxy DNS lookups and negotiation count toward `connectionTimeout`.
 
 ### SOCKS Proxy
 
@@ -202,27 +214,38 @@ ImapFlow supports both SOCKS and HTTP CONNECT proxies.
 ```js
 {
     proxy: 'http://proxy.example.com:8080'
+    // or connect to the proxy itself over TLS, with Basic authentication
+    // proxy: 'https://username:password@proxy.example.com:443'
 }
 ```
+
+The port defaults to `80` for `http:`, `443` for `https:` and `1080` for SOCKS.
 
 ### SOCKS4/SOCKS5 Specific
 
 ```js
 {
-    proxy: 'socks4://proxy.example.com:1080'
-    // or
     proxy: 'socks5://proxy.example.com:1080'
+    // or 'socks4://...' or 'socks4a://...'
 }
 ```
+
+The destination hostname is resolved differently per protocol:
+
+- `http:`, `https:`, `socks:` and `socks5:` send the IMAP server hostname to the proxy unresolved, so DNS happens on the proxy side.
+- `socks4a:` sends the hostname to the proxy as well, but does not support IPv6 destinations.
+- `socks4:` resolves the hostname locally to an IPv4 address, because SOCKS4 has no hostname or IPv6 address type.
 
 ## Logging Options
 
 ### logger
 
-By default, ImapFlow logs through a built-in [Pino](https://getpino.io/) instance. You can provide a custom logger object, or disable logging by setting `logger: false`.
+By default, ImapFlow logs through a built-in [Pino](https://getpino.io/) instance at the `info` level, written to stdout as JSON. You can provide a custom logger object, or disable logging by setting `logger: false`.
+
+A custom logger needs `debug`, `info`, `warn` and `error` methods. `trace` and `fatal` are used when present. Every log call gets a single object argument with a `msg` property and fields such as `cid` (the connection ID), so a structured logger like Pino or Bunyan fits best. When the logger has no `error` or `fatal` method, those entries are written to `console.error` so they are never lost.
 
 :::warning
-Do not pass `console` as a logger. ImapFlow expects a logger object that exposes `trace`, `debug`, `info`, `warn`, `error`, and `fatal` methods (the same shape as a Pino logger).
+Do not pass `console` as a logger. Use a structured logger such as Pino, or `logger: false`.
 :::
 
 ### Custom Logger
@@ -247,7 +270,7 @@ const pino = require('pino');
 
 ### logRaw
 
-Log all raw data read and written to socket in base64 encoding:
+Log all raw data read from and written to the socket, encoded in base64. Client frames that carry credentials are replaced with a placeholder and marked with `hidden: true`. Raw data is logged at the `trace` level: the default Pino logger is lowered to `trace` automatically, a custom logger has to be set to `trace` itself.
 
 ```js
 {
@@ -257,27 +280,27 @@ Log all raw data read and written to socket in base64 encoding:
 
 ### emitLogs
 
-Emit log entries as events instead of (or in addition to) logging:
+Emit every log entry as a `log` event, in addition to passing it to the logger. This works with `logger: false` as well, so you can route log entries yourself. Each entry has `level`, `t` (timestamp in milliseconds), `cid` (connection ID) and `lo` (a per-connection sequence number) next to the logged fields:
 
 ```js
 {
     emitLogs: true
 }
 
-client.on('log', (entry) => {
-    console.log(`${entry.level}: ${entry.msg}`);
+client.on('log', entry => {
+    console.log(`${entry.cid} ${entry.level}: ${entry.msg}`);
 });
 ```
 
 ## Connection Management
 
 :::info No Auto-Reconnect
-ImapFlow does not automatically reconnect when the connection is lost. See the [Basic Usage guide](./basic-usage.md#handling-disconnections) for information on handling disconnections.
+ImapFlow does not automatically reconnect when the connection is lost. An `ImapFlow` instance holds a single connection, and calling `connect()` a second time rejects with the `InstanceReused` error code, so create a new instance to reconnect. See the [Basic Usage guide](./basic-usage.md#handling-disconnections) for information on handling disconnections.
 :::
 
 ### connectionTimeout
 
-Timeout for establishing a connection (in milliseconds):
+Timeout for getting a usable transport, in milliseconds. A single budget covers DNS resolution, proxy negotiation and the TCP/TLS handshake. When it runs out, `connect()` rejects with the error code `CONNECT_TIMEOUT`:
 
 ```js
 {
@@ -287,7 +310,7 @@ Timeout for establishing a connection (in milliseconds):
 
 ### greetingTimeout
 
-Timeout for receiving server greeting after connection (in milliseconds):
+Timeout for receiving the server greeting once the transport is up, in milliseconds. When it runs out, `connect()` rejects with the error code `GREETING_TIMEOUT`:
 
 ```js
 {
@@ -297,7 +320,7 @@ Timeout for receiving server greeting after connection (in milliseconds):
 
 ### socketTimeout
 
-Timeout for socket inactivity (in milliseconds). Connection is terminated if no data is received within this period:
+Timeout for socket inactivity, in milliseconds. When nothing is received within this period and the quiet is expected (during IDLE, an open download or a held lock), ImapFlow sends a NOOP to check that the server is still there, and closes the connection if that NOOP fails. In any other case, such as a command that never gets an answer, the connection is closed with an `error` event carrying the code `ETIMEOUT`:
 
 ```js
 {
@@ -305,11 +328,23 @@ Timeout for socket inactivity (in milliseconds). Connection is terminated if no 
 }
 ```
 
+For all three timeouts, `0` or an invalid value means "use the default", not "no timeout".
+
+### maxLockHoldTime
+
+A mailbox lock held longer than this, in milliseconds, logs a `Mailbox lock held for a long time` warning. It is a diagnostic for forgotten `lock.release()` calls and does not release the lock. Defaults to 30 minutes, set to `0` or `false` to disable. It can also be set per lock with `getMailboxLock(path, { maxLockHoldTime })`:
+
+```js
+{
+    maxLockHoldTime: 10 * 60 * 1000  // warn after 10 minutes
+}
+```
+
 ## Client Identification
 
 ### clientInfo
 
-Client identification sent to the server via the ID extension:
+Client identification sent to the server with the [ID extension (RFC 2971)](https://www.rfc-editor.org/rfc/rfc2971.html), when the server supports it. Your values are merged over the defaults, which are `name: 'imapflow'`, the library `version`, `vendor: 'Postal Systems'` and a `support-url`. Diacritics are stripped from string values:
 
 ```js
 {
@@ -322,7 +357,7 @@ Client identification sent to the server via the ID extension:
 }
 ```
 
-After connecting, you can access server identification via `client.serverInfo`.
+After connecting, the server's own ID response is available as `client.serverInfo` (or `null` if the server does not support ID).
 
 ## IDLE and Polling Options
 
@@ -330,7 +365,7 @@ These options control the [IDLE extension (RFC 2177)](https://www.rfc-editor.org
 
 ### disableAutoIdle
 
-By default, ImapFlow automatically enters IDLE mode after 15 seconds of inactivity. Disable this behavior:
+By default, ImapFlow automatically enters IDLE mode when a mailbox is selected and the connection has been inactive for `autoIdleDelay` (15 seconds). Disable this behavior:
 
 ```js
 {
@@ -338,9 +373,19 @@ By default, ImapFlow automatically enters IDLE mode after 15 seconds of inactivi
 }
 ```
 
+### autoIdleDelay
+
+How long, in milliseconds, the connection has to be inactive before IDLE starts automatically. Defaults to `15000`. Keep it above the usual pause your code leaves between two commands, otherwise every command is followed by an IDLE that the next command has to break first. The value is capped just below `socketTimeout`. To turn auto-IDLE off use `disableAutoIdle`, not a very large delay:
+
+```js
+{
+    autoIdleDelay: 30000  // start IDLE after 30 seconds of inactivity
+}
+```
+
 ### maxIdleTime
 
-Automatically break and restart IDLE after specified milliseconds. Useful for servers that drop long-running IDLE connections:
+Automatically break and restart IDLE after specified milliseconds. Useful for servers that drop long-running IDLE connections. Not set by default, so IDLE runs until the next command. On servers without IDLE it also sets the polling interval, capped at 2 minutes:
 
 ```js
 {
@@ -350,7 +395,7 @@ Automatically break and restart IDLE after specified milliseconds. Useful for se
 
 ### missingIdleCommand
 
-Command to use for staying connected if server does not support IDLE:
+Command to poll with when the server does not support IDLE. Polling runs every 2 minutes, or every `maxIdleTime` if that is shorter:
 
 ```js
 {
@@ -358,11 +403,15 @@ Command to use for staying connected if server does not support IDLE:
 }
 ```
 
+- `NOOP` - lets the server report changes as untagged responses. Some servers only report changes after a new SELECT.
+- `SELECT` - re-selects the current mailbox.
+- `STATUS` - asks for the message count, UIDNEXT, UIDVALIDITY, unseen count and HIGHESTMODSEQ of the current mailbox.
+
 ## Extension Options
 
 ### disableCompression
 
-Disable [COMPRESS=DEFLATE extension (RFC 4978)](https://www.rfc-editor.org/rfc/rfc4978.html) even if server supports it:
+Disable [COMPRESS=DEFLATE extension (RFC 4978)](https://www.rfc-editor.org/rfc/rfc4978.html) even if server supports it. Compression is enabled by default when available:
 
 ```js
 {
@@ -382,7 +431,7 @@ Disable [BINARY extension (RFC 3516)](https://www.rfc-editor.org/rfc/rfc3516.htm
 
 ### disableAutoEnable
 
-Do not automatically enable extensions ([CONDSTORE](https://www.rfc-editor.org/rfc/rfc7162.html), [UTF8=ACCEPT](https://www.rfc-editor.org/rfc/rfc6855.html), [QRESYNC](https://www.rfc-editor.org/rfc/rfc7162.html), [IMAP4rev2](https://www.rfc-editor.org/rfc/rfc9051.html)):
+Do not send the [ENABLE (RFC 5161)](https://www.rfc-editor.org/rfc/rfc5161.html) command that ImapFlow sends after login to turn on extensions ([CONDSTORE](https://www.rfc-editor.org/rfc/rfc7162.html), [UTF8=ACCEPT](https://www.rfc-editor.org/rfc/rfc6855.html), [QRESYNC](https://www.rfc-editor.org/rfc/rfc7162.html), [IMAP4rev2](https://www.rfc-editor.org/rfc/rfc9051.html)):
 
 ```js
 {
@@ -392,7 +441,7 @@ Do not automatically enable extensions ([CONDSTORE](https://www.rfc-editor.org/r
 
 ### disableIMAP4rev2
 
-By default, ImapFlow enables [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) mode when the server advertises support for it. Use this option as a targeted opt-out for servers with broken IMAP4rev2 implementations without losing the other auto-enabled extensions:
+By default, ImapFlow enables [IMAP4rev2 (RFC 9051)](https://www.rfc-editor.org/rfc/rfc9051.html) mode when the server advertises support for it. Use this option as a targeted opt-out for servers with broken IMAP4rev2 implementations without losing the other auto-enabled extensions. It also stops ImapFlow from treating the IMAP4rev2 advertisement as support for the features IMAP4rev2 includes, such as the extended LIST syntax. Servers known to misbehave in IMAP4rev2 mode (Strato RZimapd, detected from its ID response) are kept out of it automatically:
 
 ```js
 {
@@ -404,7 +453,7 @@ Note that IMAP4rev2 removed the `\Recent` flag: on an IMAP4rev2 session the `rec
 
 ### qresync
 
-Enable [QRESYNC extension (RFC 7162)](https://www.rfc-editor.org/rfc/rfc7162.html) support. When enabled, EXPUNGE notifications include UID instead of sequence number:
+Also enable the [QRESYNC extension (RFC 7162)](https://www.rfc-editor.org/rfc/rfc7162.html), on top of CONDSTORE, when the server supports it. Defaults to `false`. With QRESYNC the server reports deleted messages with VANISHED responses, so `expunge` events carry a `uid` instead of a `seq`:
 
 ```js
 {
@@ -416,17 +465,28 @@ Enable [QRESYNC extension (RFC 7162)](https://www.rfc-editor.org/rfc/rfc7162.htm
 
 ### verifyOnly
 
-Connect, authenticate, and immediately disconnect. Useful for testing credentials:
+Connect, authenticate, and log out right away. `connect()` resolves if the credentials were accepted and rejects with an `AuthenticationFailure` (`err.authenticationFailed === true`) if they were not. Useful for testing credentials:
 
 ```js
-{
+const client = new ImapFlow({
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    auth: { user: 'user@example.com', pass: 'password' },
     verifyOnly: true
+});
+
+try {
+    await client.connect();
+    console.log('Credentials are valid');
+} catch (err) {
+    console.error(err.authenticationFailed ? 'Invalid credentials' : 'Connection failed', err.message);
 }
 ```
 
 ### includeMailboxes
 
-When used with `verifyOnly`, also fetch the list of mailboxes:
+When used with `verifyOnly`, also list the mailboxes before logging out. The listing is kept internally and is not part of the public API, so to get the mailboxes call `list()` on a normal connection instead:
 
 ```js
 {
@@ -437,7 +497,7 @@ When used with `verifyOnly`, also fetch the list of mailboxes:
 
 ### expungeHandler
 
-Custom handler for EXPUNGE events. When set, the `expunge` event is not emitted:
+Custom handler for deleted messages, called with the same object the `expunge` event would get. When set, the `expunge` event is not emitted. Unlike an event listener, the handler is awaited, and an error it throws is logged instead of being propagated:
 
 ```js
 {
@@ -449,11 +509,40 @@ Custom handler for EXPUNGE events. When set, the `expunge` event is not emitted:
 
 ### id
 
-Custom instance ID for logs:
+Custom instance ID, used as the `cid` field in logs and available as `client.id`. A random ID is generated when not set:
 
 ```js
 {
     id: 'connection-1'
+}
+```
+
+### idHashAlgorithm
+
+When the server provides no message ID of its own (through [OBJECTID (RFC 8474)](https://www.rfc-editor.org/rfc/rfc8474.html) or Gmail's X-GM-EXT-1), ImapFlow derives the `id` property of a fetched message by hashing the mailbox path, UIDVALIDITY and UID. This option sets the hash algorithm, and accepts any name Node.js `crypto` supports. Defaults to `'md5'`. A host running OpenSSL in FIPS mode does not offer MD5 and has to set another algorithm:
+
+```js
+{
+    idHashAlgorithm: 'sha256'  // 64 character hex IDs
+}
+```
+
+## Response Size Limits
+
+These limits protect against a broken or malicious server that sends endless or oversized responses. Exceeding any of them is fatal: the connection fails with the error code shown and no further input is parsed. `Infinity` disables a limit.
+
+| Option | Default | Error code | Limits |
+|--------|---------|------------|--------|
+| `maxLineLength` | 1 GB | `LineTooLarge` | One response line, without literals |
+| `maxLiteralSize` | 1 GB | `LiteralTooLarge` | One literal block, for example a message body |
+| `maxResponseSize` | 2 GB | `ResponseTooLarge` | One full response, all lines and literals combined |
+
+Keep `maxResponseSize` above `maxLiteralSize`, because a response also carries framing around its literal. With equal values a literal of exactly the maximum size could not be received.
+
+```js
+{
+    maxLiteralSize: 100 * 1024 * 1024,  // 100 MB
+    maxResponseSize: 101 * 1024 * 1024
 }
 ```
 

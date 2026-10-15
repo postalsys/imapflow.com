@@ -29,6 +29,21 @@ try {
 }
 ```
 
+The result is an array of numbers sorted in ascending order. A few other outcomes are worth handling:
+
+- If the server rejects the SEARCH command, `search()` resolves with `false` (the error is logged, not thrown).
+- If no mailbox is selected, it resolves with `undefined`.
+- If the query itself is invalid, it **throws**. An unknown key, a malformed keyword, an empty `not` operand or a key that needs an extension the server does not have (for example `gmraw` on a non-Gmail server) all reject with an error whose `code` is `InvalidSearchQuery` or `MissingServerExtension`. ImapFlow refuses such queries instead of silently dropping the criterion, because dropping it would widen the search, which is dangerous when the result is used to delete or move messages.
+
+```js title="Handling search results safely"
+let uids = await client.search({ seen: false }, { uid: true });
+if (!uids || !uids.length) {
+    console.log('Nothing found (or the search failed)');
+}
+```
+
+An empty query (`{}`), `{ all: true }` or `true` matches every message in the mailbox.
+
 ## Search Criteria
 
 ### Flag-based Searches
@@ -54,11 +69,17 @@ await client.search({ draft: true });
 // Answered messages
 await client.search({ answered: true });
 
+// Setting a flag key to false negates it: { answered: false } is UNANSWERED
+await client.search({ answered: false });
+
 // New messages (recent but not seen)
 await client.search({ new: true });
 
 // Recent messages
 await client.search({ recent: true });
+
+// Not recent
+await client.search({ old: true });
 
 // All messages
 await client.search({ all: true });
@@ -101,9 +122,15 @@ await client.search({ body: 'quarterly report' });
 await client.search({ text: 'project deadline' });
 ```
 
+All text searches, including the address searches above, are case-insensitive substring matches performed by the server. Non-ASCII values are supported: ImapFlow sends them as literals and adds `CHARSET UTF-8` to the command automatically (unless `UTF8=ACCEPT` from [RFC 6855](https://www.rfc-editor.org/rfc/rfc6855.html) is enabled, in which case no charset is needed).
+
+```js
+await client.search({ subject: 'Käsiraamat' });
+```
+
 ### Date-based Searches
 
-Search by dates (uses internal date by default):
+Search by dates. `since`, `before` and `on` match the message's internal date (when the server received it), the `sent*` variants match the `Date:` header. Values can be `Date` objects or date strings that `new Date()` understands:
 
 ```js
 // Messages received since a date
@@ -125,7 +152,17 @@ await client.search({
 await client.search({ sentSince: new Date('2024-01-01') });
 await client.search({ sentBefore: new Date('2024-06-01') });
 await client.search({ sentOn: new Date('2024-03-15') });
+
+// Date strings work the same way
+await client.search({ since: '2024-01-01' });
 ```
+
+How dates are converted:
+
+- IMAP date searches only compare calendar days and ignore the time of day. ImapFlow takes the day from the date in **UTC** (`2024-03-15T23:30:00+02:00` is 15 March in UTC, but `2024-03-16T01:00:00+02:00` is also 15 March).
+- For `before` and `sentBefore`, a value that is not exactly midnight UTC is moved to the next day, so that the day of the given timestamp is included. A `since` and `before` pair with the same date but different times would otherwise match nothing.
+- If the server supports the [WITHIN extension (RFC 5032)](https://www.rfc-editor.org/rfc/rfc5032.html) and the date is in the past, `since` and `before` are sent as `YOUNGER` and `OLDER` with an interval in seconds, so the time of day is respected exactly.
+- An invalid date (or an empty value) is ignored and adds no criterion.
 
 ### Size-based Searches
 
@@ -155,11 +192,16 @@ await client.search({ uid: '1:1000' }, { uid: true });
 
 // Search within sequence range
 await client.search({ seq: '1:100' });
+
+// Several ranges in one set
+await client.search({ uid: '10,20,30:40' }, { uid: true });
 ```
+
+The `uid` and `seq` keys restrict which messages are searched. Whether the *result* contains UIDs or sequence numbers is controlled separately by the `{ uid: true }` option.
 
 ### Header Searches
 
-Search by specific headers:
+Search by specific headers. Header names are case-insensitive and values are substring matches:
 
 ```js
 // Messages with a specific header value
@@ -169,7 +211,8 @@ await client.search({
     }
 });
 
-// Messages that have a specific header (any value)
+// Messages that have a specific header (any value).
+// `true` sends an empty string, which matches any message that has the header
 await client.search({
     header: {
         'X-Mailer': true
@@ -197,6 +240,8 @@ await client.search({ keyword: '$Important' });
 await client.search({ unKeyword: '$Processed' });
 ```
 
+The value must be a string and a valid flag name, otherwise the search throws with code `InvalidSearchQuery`. `\Recent` is not a keyword and is refused, use the `recent` key instead.
+
 ## Complex Searches
 
 ### Combining Criteria (AND)
@@ -214,7 +259,7 @@ let uids = await client.search({
 
 ### OR Searches
 
-Use the `or` array to combine criteria with OR:
+Use the `or` array to combine criteria with OR. The array can have any number of entries, ImapFlow builds the nested binary `OR` tree that IMAP requires. Each entry can contain several keys, which are ANDed together inside that entry:
 
 ```js
 // Messages from Alice OR Bob
@@ -234,11 +279,19 @@ let uids = await client.search({
     ],
     seen: false  // AND unseen
 }, { uid: true });
+
+// Each OR entry can combine several criteria
+let uids = await client.search({
+    or: [
+        { from: 'alice@example.com', flagged: true },
+        { from: 'bob@example.com', seen: false }
+    ]
+}, { uid: true });
 ```
 
 ### NOT Searches
 
-Use the `not` object to negate criteria:
+Use the `not` object to negate criteria. If the object has several keys, they are grouped, so `not: { a, b }` means "not (a and b)":
 
 ```js
 // Not from a specific sender
@@ -252,6 +305,8 @@ let uids = await client.search({
     not: { from: 'newsletter@example.com' }
 }, { uid: true });
 ```
+
+A falsy `not` value (for example `not: condition && { ... }`) is ignored. An operand that compiles to no criteria at all, like an empty object or an invalid date, throws instead, because a bare `NOT` would otherwise apply to whatever criterion follows it.
 
 ### Nested Complex Queries
 
@@ -274,15 +329,17 @@ let uids = await client.search({
 If the server supports [CONDSTORE extension (RFC 7162)](https://www.rfc-editor.org/rfc/rfc7162.html), you can search by modification sequence:
 
 ```js
-// Messages modified since a specific modseq
+// Messages whose mod-sequence is equal to or greater than 12345
 let uids = await client.search({
     modseq: 12345n
 }, { uid: true });
 ```
 
+The value can be a `BigInt` or a number. Compare it with `client.mailbox.highestModseq` from an earlier session to find what changed.
+
 ## OBJECTID Searches
 
-If the server supports [OBJECTID extension (RFC 8474)](https://www.rfc-editor.org/rfc/rfc8474.html):
+Search by the stable email and thread identifiers that `fetch()` returns as `emailId` and `threadId`. This works with servers that support the [OBJECTID extension (RFC 8474)](https://www.rfc-editor.org/rfc/rfc8474.html), and on Gmail, where ImapFlow uses `X-GM-MSGID` and `X-GM-THRID` from the [Gmail IMAP extensions](https://developers.google.com/workspace/gmail/imap/imap-extensions) instead:
 
 ```js
 // Search by email ID
@@ -296,9 +353,11 @@ let uids = await client.search({
 }, { uid: true });
 ```
 
+If the server supports neither extension, the search throws with code `MissingServerExtension`. An empty value adds no criterion.
+
 ## Gmail-Specific Searches
 
-When connected to Gmail, you can use Gmail's raw search syntax:
+When connected to Gmail (the server advertises `X-GM-EXT-1`), you can use Gmail's own search syntax through the `X-GM-RAW` search key from the [Gmail IMAP extensions](https://developers.google.com/workspace/gmail/imap/imap-extensions). On any other server these keys throw with code `MissingServerExtension`.
 
 ```js
 // Gmail raw search
@@ -318,6 +377,50 @@ await client.search({ gmraw: 'before:2024/01/01 after:2023/01/01' });
 await client.search({ gmailraw: 'is:starred' });
 ```
 
+### Gmail Labels
+
+The `labels` key filters by Gmail label. `has` matches messages that carry all of the listed labels, `not` excludes messages that carry any of them. ImapFlow compiles it into an `X-GM-RAW` query with `label:` and `-label:` terms, quoting multi-word label names:
+
+```js
+let uids = await client.search({
+    labels: {
+        has: ['Work', 'Project X'],
+        not: ['Archived']
+    }
+}, { uid: true });
+```
+
+An empty `labels` filter is a no-op and works on any server.
+
+## ESEARCH Result Options
+
+With the `returnOptions` search option you can ask for a summary instead of the full list of numbers, which is much cheaper on large mailboxes. `COUNT`, `MIN` and `MAX` return single numbers, while `ALL` still covers every match, only in compact form. On servers that support [ESEARCH (RFC 4731)](https://www.rfc-editor.org/rfc/rfc4731.html), or IMAP4rev2 where it is built in, the result is an object instead of an array:
+
+```js
+let result = await client.search({ seen: false }, {
+    uid: true,
+    returnOptions: ['COUNT', 'MIN', 'MAX']
+});
+
+console.log(result.count); // number of matches
+console.log(result.min);   // lowest matching UID
+console.log(result.max);   // highest matching UID
+```
+
+Add `'ALL'` to also get `result.all`, the matches as a compact sequence set such as `"1,5:10,20"`.
+
+For paging, request a slice of the results with [PARTIAL (RFC 9394)](https://www.rfc-editor.org/rfc/rfc9394.html):
+
+```js
+let page = await client.search({ all: true }, {
+    uid: true,
+    returnOptions: [{ partial: '1:100' }]
+});
+console.log(page.partial); // { range: '1:100', messages: '...' }
+```
+
+If the server does not support ESEARCH, ImapFlow runs a regular search and derives `count`, `min`, `max` and `all` from the result itself. `partial` cannot be derived that way, so a request for only `partial` returns the plain array of numbers.
+
 ## Using Search Results
 
 ### With fetch()
@@ -330,7 +433,7 @@ try {
     let uids = await client.search({ seen: false }, { uid: true });
 
     if (uids.length > 0) {
-        // fetch() accepts the search results directly
+        // fetchAll() accepts the array of UIDs directly
         let messages = await client.fetchAll(uids, {
             envelope: true
         }, { uid: true });
@@ -346,7 +449,7 @@ try {
 
 ### Search as Range in fetch()
 
-You can also pass search criteria directly to fetch methods:
+You can also pass search criteria directly to fetch methods, and to the other methods that take a message range (`messageFlagsAdd()`, `messageMove()`, `messageDelete()`, and so on). ImapFlow runs a UID SEARCH first and then uses the matching UIDs:
 
 ```js
 // fetch() can take a SearchObject as range
@@ -367,9 +470,11 @@ for await (let message of client.fetch({ seen: false }, { envelope: true })) {
 
 ### Find Unread Messages from Today
 
+Remember that date searches use the UTC calendar day (unless the server supports WITHIN). A local midnight is a different UTC day in many time zones, so build the date in UTC:
+
 ```js
-let today = new Date();
-today.setHours(0, 0, 0, 0);
+let now = new Date();
+let today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
 let uids = await client.search({
     seen: false,
@@ -388,14 +493,19 @@ let uids = await client.search({
 
 ### Find Messages in a Thread
 
+If the server supports OBJECTID or is Gmail, use the thread ID of a known message:
+
 ```js
-// Find all messages in a conversation
-let uids = await client.search({
-    or: [
-        { subject: 'Re: Project Update' },
-        { subject: 'Project Update' }
-    ]
-}, { uid: true });
+let message = await client.fetchOne(knownUid, { threadId: true }, { uid: true });
+if (message && message.threadId) {
+    let uids = await client.search({ threadId: message.threadId }, { uid: true });
+}
+```
+
+Otherwise fall back to matching the subject (a substring match, so this also finds replies):
+
+```js
+let uids = await client.search({ subject: 'Project Update' }, { uid: true });
 ```
 
 ### Find Old Messages to Archive

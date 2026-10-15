@@ -38,6 +38,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'examples/fetching-messages',
+        'examples/parsing-messages',
       ],
     },
     {

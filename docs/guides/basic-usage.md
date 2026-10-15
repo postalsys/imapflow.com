@@ -37,8 +37,8 @@ stateDiagram-v2
     Connecting --> Authenticated: Auth Success
     Connecting --> Disconnected: Auth Failure
     Authenticated --> Selected: getMailboxLock()
-    Selected --> Authenticated: lock.release()
-    Selected --> Idling: Auto-IDLE
+    Selected --> Authenticated: mailboxClose()
+    Selected --> Idling: Auto-IDLE (no lock held, inactive)
     Idling --> Selected: Command
     Authenticated --> Disconnected: logout()
     Selected --> Disconnected: logout()
@@ -65,6 +65,14 @@ The client transitions through these states:
 | Authenticated | Logged in, no mailbox | `list()`, `status()`, `getMailboxLock()` |
 | Selected | Mailbox is open | All operations including `fetch()`, `search()` |
 | Idling | Waiting for server notifications | Events fire, any command breaks IDLE |
+
+Releasing a mailbox lock does **not** close the mailbox. It stays selected until another mailbox is opened, `mailboxClose()` is called or the connection ends. The current state is available as `client.state`, and `client.usable` tells whether the connection can still run commands.
+
+### Automatic IDLE
+
+When a mailbox is selected, no lock is held and no command has run for `autoIdleDelay` milliseconds (15 seconds by default), ImapFlow starts [IDLE (RFC 2177)](https://www.rfc-editor.org/rfc/rfc2177.html) so the server can push notifications. Any command you run breaks IDLE first and IDLE is restarted once the connection is quiet again. On servers without IDLE support, ImapFlow polls with the command set in `missingIdleCommand` (`NOOP` by default). Set `disableAutoIdle: true` to turn this off and call `client.idle()` yourself.
+
+While you hold a mailbox lock, auto-IDLE does not start, so a lock held for a long time also delays new-message notifications.
 
 ### Logging Out
 
@@ -116,6 +124,18 @@ try {
 :::warning Always Release Locks
 Always release locks in a `finally` block to prevent deadlocks. If a lock is not released, subsequent `getMailboxLock()` calls will wait indefinitely.
 :::
+
+Lock requests are queued and granted one at a time. `getMailboxLock()` accepts these options:
+
+```js
+let lock = await client.getMailboxLock('INBOX', {
+    readOnly: true,          // open with EXAMINE instead of SELECT
+    acquireTimeout: 30000,   // reject with code 'LockTimeout' if not granted within 30s
+    description: 'sync job'  // shows up in the log, helps to debug stuck locks
+});
+```
+
+If the mailbox does not exist, the returned promise rejects and the error has `mailboxMissing: true`.
 
 ### Why Use Locks?
 
@@ -225,35 +245,11 @@ try {
 
 ## Message Ranges
 
-ImapFlow supports various range formats for specifying messages:
-
-```js
-// Single message
-'1'           // Message with sequence number 1
-'12345'       // Message with sequence/UID 12345
-
-// Range of messages
-'1:10'        // Messages 1 through 10
-'100:*'       // Message 100 to the last message
-
-// Multiple ranges
-'1,3,5'       // Messages 1, 3, and 5
-'1:5,10:15'   // Messages 1-5 and 10-15
-
-// Special ranges (ImapFlow extensions)
-'*'           // Last message only
-'*:-10'       // Last 10 messages
-
-// Array of numbers
-[1, 2, 3, 10, 20]  // Specific messages
-
-// Search object (resolves to matching messages)
-{ seen: false }    // All unseen messages
-```
+Methods that take a message range accept a sequence set string (`'1:10'`, `'100:*'`, `'1,3,5'`), an array of numbers or a search object such as `{ seen: false }`. Pass `{ uid: true }` to treat the numbers as UIDs. There is no shorthand for "the last N messages". See [Message Ranges](./fetching-messages.md#message-ranges) in the fetching guide for the details.
 
 ## Events
 
-ImapFlow emits events for real-time notifications:
+ImapFlow emits events for real-time notifications. Mailbox events are emitted whenever the server reports a change, either while idling or as part of the response to any other command:
 
 ```js
 // Connection events
@@ -268,15 +264,16 @@ client.on('error', (err) => {
 
 // Mailbox events (only when mailbox is selected)
 client.on('exists', (data) => {
-    console.log(`New message count: ${data.count}`);
+    console.log(`${data.path}: message count ${data.prevCount} -> ${data.count}`);
 });
 
 client.on('expunge', (data) => {
-    console.log(`Message ${data.seq} was deleted`);
+    // With QRESYNC (VANISHED responses) only data.uid is set, otherwise data.seq
+    console.log(`Message ${data.vanished ? 'UID ' + data.uid : data.seq} was deleted`);
 });
 
 client.on('flags', (data) => {
-    console.log(`Flags changed for message ${data.seq}`);
+    console.log(`Flags changed for message ${data.seq}:`, [...data.flags]);
 });
 
 // Mailbox open/close events
@@ -287,6 +284,43 @@ client.on('mailboxOpen', (mailbox) => {
 client.on('mailboxClose', (mailbox) => {
     console.log(`Closed ${mailbox.path}`);
 });
+```
+
+:::warning Event handlers are not awaited
+ImapFlow uses Node's `EventEmitter`, which does not wait for `async` handlers. A promise returned from a handler is ignored, so catch errors inside the handler yourself.
+
+Do not wait for a mailbox lock inside an event handler while your own code already holds a lock on the same connection. The handler would wait for the held lock, and if the code holding it waits for the handler to finish, both wait forever. Instead, record what happened in the handler (for example set a flag or push to a queue) and process it after the current lock has been released.
+:::
+
+```js title="Reacting to new messages without deadlocking"
+let pending = false;
+// Set this from client.mailbox.uidNext after opening the mailbox
+let nextUid;
+
+client.on('exists', data => {
+    if (data.count > data.prevCount) {
+        pending = true;
+        processNewMessages().catch(err => console.error(err));
+    }
+});
+
+async function processNewMessages() {
+    // getMailboxLock() waits until any lock held elsewhere is released
+    let lock = await client.getMailboxLock('INBOX');
+    try {
+        if (!pending) return;
+        pending = false;
+        // Fetch only messages that arrived since the last run
+        for await (let msg of client.fetch(`${nextUid}:*`, { envelope: true }, { uid: true })) {
+            // "N:*" also matches the newest message when N is above every UID
+            if (msg.uid < nextUid) continue;
+            nextUid = msg.uid + 1;
+            console.log(msg.envelope.subject);
+        }
+    } finally {
+        lock.release();
+    }
+}
 ```
 
 ## Promises and Async/Await
@@ -365,6 +399,14 @@ async function main() {
 | `CONNECT_TIMEOUT` | Connection timed out |
 | `GREETING_TIMEOUT` | Server greeting not received |
 | `EConnectionClosed` | Connection was closed unexpectedly |
+| `ETIMEOUT` | Socket timed out due to inactivity |
+| `LockTimeout` | `getMailboxLock()` was not granted within `acquireTimeout` |
+| `ETHROTTLE` | The server is throttling requests (`err.throttleReset` has the suggested back-off in ms) |
+| `NotFound` | The requested mailbox does not exist (for example from `status()`) |
+| `MissingServerExtension` | The operation needs an IMAP extension the server does not support |
+| `InvalidSearchQuery` | A search query could not be compiled (unknown key, invalid keyword, ...) |
+
+Socket, TLS and DNS errors keep Node's own code, such as `ECONNREFUSED` or `ENOTFOUND`. Authentication failures have `err.authenticationFailed` set to `true`, and command failures carry `err.responseStatus` (`'NO'` or `'BAD'`) and `err.responseText` from the server.
 
 ## Complete Example
 

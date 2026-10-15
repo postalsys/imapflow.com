@@ -25,7 +25,7 @@ npm install imapflow
 - **ES modules and CommonJS** - `import { ImapFlow } from 'imapflow'` and `const { ImapFlow } = require('imapflow')` both work
 - **Comprehensive IMAP support** - Supports all major IMAP operations and extensions
 - **Mailbox locking** - Built-in locking mechanism for safe concurrent mailbox access
-- **Proxy support** - SOCKS and HTTP CONNECT proxy support for secure connections
+- **Proxy support** - SOCKS4, SOCKS4a, SOCKS5 and HTTP(S) CONNECT proxies
 - **Gmail support** - Gmail-specific extensions including labels and raw search
 
 :::tip ImapFlow powers EmailEngine
@@ -56,6 +56,13 @@ ImapFlow implements [RFC 3501](https://www.rfc-editor.org/rfc/rfc3501.html) (IMA
 | X-GM-EXT-1 | [Google](https://developers.google.com/workspace/gmail/imap/imap-extensions) | Gmail-specific features (labels, search) |
 | OBJECTID | [RFC 8474](https://www.rfc-editor.org/rfc/rfc8474.html) | Unique object identifiers |
 | QUOTA | [RFC 9208](https://www.rfc-editor.org/rfc/rfc9208.html) | Mailbox storage quota |
+| ENABLE | [RFC 5161](https://www.rfc-editor.org/rfc/rfc5161.html) | Turns on CONDSTORE, QRESYNC, UTF8=ACCEPT and IMAP4rev2 |
+| UNSELECT | [RFC 3691](https://www.rfc-editor.org/rfc/rfc3691.html) | Close a mailbox without expunging deleted messages |
+| LIST-EXTENDED | [RFC 5258](https://www.rfc-editor.org/rfc/rfc5258.html) | Extended LIST command, subscription state in one round trip |
+| LITERAL+ / LITERAL- | [RFC 7888](https://www.rfc-editor.org/rfc/rfc7888.html) | Non-synchronizing literals, fewer round trips |
+| APPENDLIMIT | [RFC 7889](https://www.rfc-editor.org/rfc/rfc7889.html) | Maximum message size the server accepts for APPEND |
+| SASL-IR | [RFC 4959](https://www.rfc-editor.org/rfc/rfc4959.html) | Initial response in AUTHENTICATE, saves a round trip |
+| OAUTHBEARER / XOAUTH2 | [RFC 7628](https://www.rfc-editor.org/rfc/rfc7628.html), [Google](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol) | OAuth2 authentication with an access token |
 
 ## Quick Example
 
@@ -81,11 +88,13 @@ const main = async () => {
     let lock = await client.getMailboxLock('INBOX');
     try {
         // Fetch latest message
+        // (resolves to false if the mailbox is empty)
         let message = await client.fetchOne('*', {
-            envelope: true,
-            source: true
+            envelope: true
         });
-        console.log(message.envelope.subject);
+        if (message) {
+            console.log(message.envelope.subject);
+        }
     } finally {
         lock.release();
     }
