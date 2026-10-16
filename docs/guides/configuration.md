@@ -236,6 +236,112 @@ The destination hostname is resolved differently per protocol:
 - `socks4a:` sends the hostname to the proxy as well, but does not support IPv6 destinations.
 - `socks4:` resolves the hostname locally to an IPv4 address, because SOCKS4 has no hostname or IPv6 address type.
 
+## Custom Transport
+
+By default ImapFlow opens its connection with Node.js `net` and `tls`. The `transport` option replaces that with your own socket layer, for runtimes that have no `node:net` or `node:tls` (celld, browsers) or for connections that are not TCP at all. Available since ImapFlow 2.5.0. A transport can not be combined with `proxy`, that combination fails with the error code `UnsupportedTransportOption`.
+
+### cloudflare:sockets (celld, Cloudflare Workers)
+
+`createSocketsTransport()` builds a transport from the `connect()` function of the `cloudflare:sockets` API:
+
+```js title="Connecting through cloudflare:sockets"
+import { connect } from 'cloudflare:sockets';
+import { ImapFlow, createSocketsTransport } from 'imapflow';
+
+const client = new ImapFlow({
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    auth: { user: 'user@example.com', pass: 'password' },
+    transport: createSocketsTransport(connect)
+});
+```
+
+Implicit TLS, cleartext and STARTTLS all work. These runtimes always verify the server certificate against their own root store and take the SNI name from the hostname, so the options that would change that are refused with `UnsupportedTransportOption` instead of being ignored:
+
+- `tls.rejectUnauthorized: false`
+- a custom `tls.ca`, and client certificates (`tls.cert`, `tls.key`, `tls.pfx`, `tls.passphrase`) or `tls.checkServerIdentity`
+- a `servername` that differs from `host`
+
+The runtime reports no cipher details, so `client.tls` stays `false` on a secure connection.
+
+### Socket APIs Built on Web Streams
+
+`createStreamsTransport()` adapts any socket API whose connection opens with a promise of a `ReadableStream` and a `WritableStream` of bytes, such as Chrome's Direct Sockets or an in-memory connection. `open()` gets the destination and `secure` (whether ImapFlow wants a TLS connection) and returns the connection; it may throw to refuse it. `upgrade()` starts TLS on an open connection after STARTTLS. Leave it out when the API can not do that: ImapFlow then treats the server as one without STARTTLS, which fails the connection with `err.tlsFailed` set when `doSTARTTLS: true`, and otherwise continues in cleartext with a warning.
+
+```js title="A web streams socket API"
+const { ImapFlow, createStreamsTransport } = require('imapflow');
+
+const transport = createStreamsTransport({
+    open: ({ host, port, secure }) => {
+        const socket = openSocket(host, port, secure);
+        return {
+            opened: socket.opened.then(() => ({
+                readable: socket.readable,
+                writable: socket.writable,
+                // optional: remoteAddress, remotePort, localAddress, localPort
+                // optional for a TLS connection, reported as client.tls:
+                // tls: { authorized: true, name: 'TLS_AES_256_GCM_SHA384', version: 'TLSv1.3' }
+            })),
+            close: () => socket.close()
+        };
+    },
+    // optional
+    upgrade: (connection, options) => startTls(connection)
+});
+
+const client = new ImapFlow({ host: 'imap.example.com', port: 143, auth, transport });
+```
+
+The transport stops reading once the server accepted STARTTLS, so the API never has to start TLS while a read is in flight, and releases the stream locks before `upgrade()` is called.
+
+### Writing a Transport
+
+A socket API built on events implements the transport itself. `connect(options, onConnect)` returns a Node.js `Duplex` stream of bytes, calls `onConnect` once the connection is up, and reports connection errors with an `error` event on the stream (or throws to refuse the connection right away). The stream also needs `setTimeout(ms)`, emitting `timeout` after `ms` without traffic like `net.Socket` does, which is the watchdog behind `socketTimeout`. `upgrade(socket, options, onSecure)` is optional and starts TLS after STARTTLS.
+
+```js title="A transport over an event based socket"
+const { Duplex } = require('stream');
+
+const transport = {
+    connect({ host, port, secure }, onConnect) {
+        const conn = openConnection(host, port, secure);
+        let timer;
+        let timeout = 0;
+        const touch = () => {
+            clearTimeout(timer);
+            if (timeout > 0) {
+                timer = setTimeout(() => socket.emit('timeout'), timeout);
+            }
+        };
+        const socket = new Duplex({
+            read() {},
+            write(chunk, encoding, callback) {
+                touch();
+                conn.send(chunk, callback);
+            },
+            destroy(err, callback) {
+                clearTimeout(timer);
+                conn.close();
+                callback(err);
+            }
+        });
+        socket.setTimeout = ms => {
+            timeout = ms;
+            touch();
+            return socket;
+        };
+        conn.on('data', data => {
+            touch();
+            socket.push(data);
+        });
+        conn.on('end', () => socket.push(null));
+        conn.on('error', err => socket.destroy(err));
+        conn.on('connect', onConnect);
+        return socket;
+    }
+};
+```
+
 ## Logging Options
 
 ### logger

@@ -39,7 +39,7 @@ npm run typecheck  # Run TypeScript type checking
 - Async event handlers on ImapFlow client are not awaited by Node.js EventEmitter
 - `getMailboxLock()` queues requests - avoid holding a lock while trying to acquire another in event handlers (causes deadlock)
 - Node.js 20.0+ required (uses modern JS features)
-- ImapFlow 2.0 is written in TypeScript and published as a dual ES module / CommonJS package. The examples use `require()`, `import { ImapFlow } from 'imapflow'` works the same. Bun, Deno 2 (`npm:imapflow`, needs `--allow-net --allow-env --allow-sys=hostname`) and Cloudflare Workers (`nodejs_compat`) are supported with the limits listed in `docs/getting-started/installation.md`
+- ImapFlow 2.0 is written in TypeScript and published as a dual ES module / CommonJS package. The examples use `require()`, `import { ImapFlow } from 'imapflow'` works the same. Bun, Deno 2 (`npm:imapflow`, needs `--allow-net --allow-env --allow-sys=hostname`), Cloudflare Workers (`nodejs_compat`), celld and browsers are supported with the limits listed in `docs/getting-started/installation.md`. celld and browsers need the `transport` option (2.5.0+): `createSocketsTransport(connect)` over `cloudflare:sockets`, `createStreamsTransport()` over any web streams socket API, or a hand-written transport, documented in `docs/guides/configuration.md#custom-transport`
 - The shipped declarations are generated from the source with internal members stripped, so only what `docs/api/imapflow-client.md` documents (plus connection facts like `state`, `namespace`, `greeting`, `tls`) is visible to TypeScript consumers
 
 ## Analytics (Plausible, borrowed from emailengine.app)

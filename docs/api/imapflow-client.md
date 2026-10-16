@@ -33,6 +33,7 @@ Creates a new IMAP client instance.
   - `logger` (Object|Boolean) - Logger object with `debug`, `info`, `warn` and `error` methods (`trace` and `fatal` are used when present), for example a pino or bunyan instance. Set to `false` to disable logging, omit to use the built-in pino logger
   - `tls` (Object) - Additional TLS options passed to Node.js `tls.connect()`
   - `proxy` (String) - Proxy URL. Supports HTTP CONNECT (`http:`, `https:`) and SOCKS (`socks:`, `socks4:`, `socks4a:`, `socks5:`) proxies. IPv6 proxy endpoints use URL form, e.g. `socks5://[2001:db8::1]:1080`
+  - `transport` (Object) - Opens the connection through this transport instead of Node.js `net` and `tls`, see [Transport Functions](#transport-functions) and [Custom Transport](../guides/configuration.md#custom-transport). Can not be combined with `proxy`
   - `clientInfo` (Object) - Client identification sent with the ID command ([RFC 2971](https://www.rfc-editor.org/rfc/rfc2971.html)): `name`, `version`, `os`, `vendor`, `support-url`, `date` and any other field
   - `disableAutoIdle` (Boolean) - Do not start IDLE ([RFC 2177](https://www.rfc-editor.org/rfc/rfc2177.html)) automatically when the connection is inactive
   - `autoIdleDelay` (Number|String) - How long in ms the connection has to be inactive before IDLE starts automatically (default: 15000). Capped below `socketTimeout`. Use `disableAutoIdle` to turn auto-IDLE off rather than a very large delay
@@ -149,7 +150,7 @@ Detaches the underlying sockets from the IMAP pipeline and returns the read and 
 
 Call it while the connection is not idling. An IDLE in progress is not broken first, so the server still expects `DONE`.
 
-**Returns:** `{ readSocket, writeSocket, socket }` - `readSocket` is the read stream (the inflated stream if compression is active), `writeSocket` the write stream, and `socket` the raw underlying socket
+**Returns:** `{ readSocket, writeSocket, socket }` - `readSocket` is the read stream (the inflated stream if compression is active), `writeSocket` the write stream, and `socket` the raw underlying socket (a `net.Socket` or `tls.TLSSocket` on Node.js, or the stream a custom transport returned; TypeScript types it as a `Duplex` stream)
 
 ### noop()
 
@@ -1197,6 +1198,39 @@ The connection logger. Every level (`trace`, `debug`, `info`, `warn`, `error`, `
 Static property with the ImapFlow module version.
 
 **Type:** String
+
+## Transport Functions
+
+The package exports two functions that build a value for the `transport` option (ImapFlow 2.5.0 or newer). See [Custom Transport](../guides/configuration.md#custom-transport) for the details and for writing a transport by hand.
+
+### createSocketsTransport(connect)
+
+Builds a transport from the `connect()` function of the `cloudflare:sockets` API, for [celld](../getting-started/installation.md#celld) and Cloudflare Workers.
+
+**Parameters:**
+
+- `connect` (Function) - The `connect` export of `cloudflare:sockets`
+
+**Returns:** A transport object. TLS options the runtime can not honor (`tls.rejectUnauthorized: false`, `tls.ca`, client certificates, a `servername` that differs from `host`) make `connect()` reject with the error code `UnsupportedTransportOption`.
+
+```js title="celld or Workers"
+import { connect } from 'cloudflare:sockets';
+import { ImapFlow, createSocketsTransport } from 'imapflow';
+
+const client = new ImapFlow({ host: 'imap.example.com', port: 993, secure: true, auth, transport: createSocketsTransport(connect) });
+```
+
+### createStreamsTransport(api)
+
+Builds a transport over any socket API whose connection opens with a promise of a `ReadableStream` and a `WritableStream` of bytes.
+
+**Parameters:**
+
+- `api` (Object)
+  - `open` (Function) - Called with `{ host, port, servername, tls, secure }`. Returns `{ opened, close }`, where `opened` resolves with `{ readable, writable }` once the connection (and the TLS handshake, for `secure`) is up, optionally with `remoteAddress`, `remotePort`, `localAddress`, `localPort` and `tls` (`{ authorized, name, version }`, reported as `client.tls`). May throw to refuse the connection
+  - `upgrade` (Function) - Optional. Called with the connection and the TLS options after the server accepted STARTTLS, returns the TLS connection. Without it ImapFlow does not try STARTTLS
+
+**Returns:** A transport object
 
 ## Type Definitions
 

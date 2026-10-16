@@ -405,6 +405,7 @@ async function main() {
 | `NotFound` | The requested mailbox does not exist (for example from `status()`) |
 | `MissingServerExtension` | The operation needs an IMAP extension the server does not support |
 | `InvalidSearchQuery` | A search query could not be compiled (unknown key, invalid keyword, ...) |
+| `UnsupportedTransportOption` | The `transport` can not honor an option (for example `tls.rejectUnauthorized: false` on celld), or `transport` was combined with `proxy` |
 
 Socket, TLS and DNS errors keep Node's own code, such as `ECONNREFUSED` or `ENOTFOUND`. Authentication failures have `err.authenticationFailed` set to `true`, and command failures carry `err.responseStatus` (`'NO'` or `'BAD'`) and `err.responseText` from the server.
 
