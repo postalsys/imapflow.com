@@ -42,13 +42,12 @@ npm run typecheck  # Run TypeScript type checking
 - ImapFlow 2.0 is written in TypeScript and published as a dual ES module / CommonJS package. The examples use `require()`, `import { ImapFlow } from 'imapflow'` works the same. Bun, Deno 2 (`npm:imapflow`, needs `--allow-net --allow-env --allow-sys=hostname`), Cloudflare Workers (`nodejs_compat`), celld and browsers are supported with the limits listed in `docs/getting-started/installation.md`. celld and browsers need the `transport` option (2.5.0+): `createSocketsTransport(connect)` over `cloudflare:sockets`, `createStreamsTransport()` over any web streams socket API, or a hand-written transport, documented in `docs/guides/configuration.md#custom-transport`
 - The shipped declarations are generated from the source with internal members stripped, so only what `docs/api/imapflow-client.md` documents (plus connection facts like `state`, `namespace`, `greeting`, `tls`) is visible to TypeScript consumers
 
-## Analytics (Plausible, borrowed from emailengine.app)
+## Analytics (Plausible, via a.imapflow.com)
 
-`docusaurus.config.ts` loads `https://emailengine.app/a/pv.js` and posts events to `https://emailengine.app/a/e`. Those are not app paths: they are Caddy `handle` blocks in the `emailengine.app` vhost on srv-04, proxying to the self-hosted Plausible container that `plausible.emailengine.dev` fronts. **If those routes are renamed, analytics here dies silently**, with no error anywhere.
+`docusaurus.config.ts` loads `https://a.imapflow.com/pv.js` and posts events to `https://a.imapflow.com/e`. `a.imapflow.com` is an A record (Cloudflare DNS, unproxied) to 95.216.108.165 on srv-04, where a Caddy vhost in `/etc/caddy/Caddyfile` proxies both paths to the self-hosted Plausible container that `plausible.emailengine.dev` fronts. **If the DNS record, the vhost or its paths change, analytics here dies silently**, with no error anywhere.
 
-It is proxied because EasyPrivacy, which uBlock Origin and AdGuard both enable by default, carries `://plausible.*/js/script.` and `://plausible.*/api/event|`. Both match on the hostname prefix, so the direct `plausible.emailengine.dev` URLs load for nobody running a blocker.
+History: this used to load from `emailengine.app/a/pv.js` and `/a/e`. When emailengine.app moved to GitHub Pages those routes started returning 404 and analytics stopped. `a.imapflow.com` replaced them, following the `a.inboxclassic.com` pattern.
 
-Two things specific to this site:
+It is proxied because EasyPrivacy, which uBlock Origin and AdGuard both enable by default, carries `://plausible.*/js/script.` and `://plausible.*/api/event|`. Both match on the hostname prefix, so the direct `plausible.emailengine.dev` URLs load for nobody running a blocker. Being a subdomain of imapflow.com, the requests are first-party, so blocking third-party scripts does not drop them either.
 
-- These are **third-party** requests, unlike the other sites on that proxy, which are all subdomains of `emailengine.app`. Blockers define third-party by registrable domain (eTLD+1), so anyone blocking third-party scripts wholesale still loses analytics here. The alternative was an `imapflow.com` subdomain pointed at srv-04 (what `www.nodemailer.com` does for nodemailer.com); that was considered and decided against, so this is a known, accepted gap rather than an oversight.
-- `data-api` must be absolute. Without it, or with a relative path, the script derives its endpoint from its own src origin and would post to `https://emailengine.app/api/event`, which is not routed.
+`data-api` must be absolute. Without it the script derives its endpoint from its own src origin and would post to `https://a.imapflow.com/api/event`, which is not routed.

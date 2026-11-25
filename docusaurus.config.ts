@@ -33,28 +33,23 @@ const config: Config = {
 
   onBrokenLinks: 'throw',
 
-  // Plausible analytics, loaded from emailengine.app rather than direct.
+  // Plausible analytics, loaded from a.imapflow.com rather than direct.
   //
   // EasyPrivacy, which uBlock Origin and AdGuard both enable by default, carries
   // ://plausible.*/js/script. and ://plausible.*/api/event|. Both match on the
   // hostname prefix, so the direct plausible.emailengine.dev URLs load for nobody
-  // running a blocker. emailengine.app proxies both paths first-party (Caddy
-  // handle blocks in its vhost on srv-04, see ../emailengine-web/CLAUDE.md).
+  // running a blocker. a.imapflow.com is a Caddy vhost on srv-04 that proxies
+  // /pv.js and /e to the self-hosted Plausible. Being a subdomain of this site,
+  // the requests are first-party. The name is neutral on purpose.
   //
-  // Unlike the other sites on that proxy, this one is a different registrable
-  // domain, so these are third-party requests: anyone blocking third-party
-  // scripts wholesale still loses analytics here. Serving it from an
-  // imapflow.com subdomain would avoid that, but this site is GitHub Pages and
-  // has no hostname on srv-04 to proxy from. Chosen deliberately over adding one.
-  //
-  // data-api must be absolute. A relative path would resolve against
-  // imapflow.com, which is GitHub Pages and has no such route.
+  // data-api must be absolute. Without it the script derives its endpoint from
+  // its own origin and posts to a.imapflow.com/api/event, which is not routed.
   scripts: [
     {
-      src: 'https://emailengine.app/a/pv.js',
+      src: 'https://a.imapflow.com/pv.js',
       defer: true,
       'data-domain': 'imapflow.com',
-      'data-api': 'https://emailengine.app/a/e',
+      'data-api': 'https://a.imapflow.com/e',
     },
   ],
 
